@@ -37,6 +37,45 @@ export const CFG = {
   // later chunk; the parked fleet is placed by the city builder now).
   parkedCars: 10,
 
+  // World life (chunk 2): traffic, pedestrians, police and the wanted system.
+  trafficCars: 12, // civilian cars cruising the road lattice
+  pedestrians: 26, // residents strolling the sidewalks
+  pedWalkSpeed: [1.1, 1.6], // metres per second, strolling
+  pedFleeSpeed: 4.6, // metres per second, running from gunfire
+  pedFleeRadius: 35, // gunfire within this many metres makes peds flee
+
+  // The wanted system: stars 0-5. Stealing a car is worth one star; three
+  // pistol shots are worth one star; running a pedestrian over is one star.
+  // Cruisers chase; break line of sight and distance to cool off, one star
+  // at a time.
+  police: {
+    cruiser: { name: 'Police Cruiser', accel: 14, maxSpeed: 48, reverseSpeed: 10, turn: 2.1, grip: 9, color: 0xf2f2f2, body: 'police' },
+    maxCruisers: 5,
+    spawnDistance: 70, // cruisers arrive this far from the player
+    despawnDistance: 135, // a leaving cruiser is removed past this distance
+    ramDistance: 5, // a cruiser this close to the player's car rams it
+    ramDamage: 7, // car health lost per ram
+    coolRange: 50, // no cruiser with line of sight inside this range: cooling
+    coolTime: [6, 9, 12, 15, 18], // seconds to shed one star, per star level
+  },
+
+  // Combat.
+  pistol: {
+    magazine: 12,
+    damage: 34, // three hits drop a mission goon
+    range: 60,
+    reloadSeconds: 0.9,
+    heatPerShot: 1 / 3, // three shots are worth one star
+  },
+  enemy: {
+    health: 100,
+    engageRange: 45,
+    shootRange: 42,
+    damageOnFoot: 9,
+    damageInCar: 4,
+    shootInterval: 1.4,
+  },
+
   // Camera (third person).
   camera: {
     footDistance: 7.5,

@@ -9,48 +9,12 @@ import * as THREE from 'three';
 import { CFG } from './config.js';
 import { makeRng, range, int, pick, shuffled } from './random.js';
 import { buildBuildingMesh, buildCarMesh, buildFountainMesh, buildTreeMesh } from './models.js';
+import { buildTextures } from './textures.js';
+import { makeWaterMaterial } from './shaders.js';
+import { resolveCircle, clampToBounds } from './physics.js';
 
-// Push a circle (x, z, radius) out of every building box it overlaps.
-// Returns the corrected position and whether any collision happened.
-export function resolveCircle(colliders, x, z, radius) {
-  let hit = false;
-  for (const b of colliders) {
-    const cx = Math.max(b.minX, Math.min(x, b.maxX));
-    const cz = Math.max(b.minZ, Math.min(z, b.maxZ));
-    let dx = x - cx;
-    let dz = z - cz;
-    const d2 = dx * dx + dz * dz;
-    if (d2 >= radius * radius) continue;
-    hit = true;
-    if (d2 > 1e-9) {
-      const d = Math.sqrt(d2);
-      const push = (radius - d) / d;
-      x += dx * push;
-      z += dz * push;
-    } else {
-      // Centre inside the box: push out along the smallest penetration.
-      const left = x - b.minX;
-      const right = b.maxX - x;
-      const top = z - b.minZ;
-      const bottom = b.maxZ - z;
-      const m = Math.min(left, right, top, bottom);
-      if (m === left) x = b.minX - radius;
-      else if (m === right) x = b.maxX + radius;
-      else if (m === top) z = b.minZ - radius;
-      else z = b.maxZ + radius;
-    }
-  }
-  return { x, z, hit };
-}
-
-// Keep a position inside the playable area: the city and the beach, not the
-// open ocean.
-export function clampToBounds(x, z) {
-  return {
-    x: Math.max(-200, Math.min(200, x)),
-    z: Math.max(-200, Math.min(214, z)),
-  };
-}
+// Re-exported for the modules that learned them from here (player, traffic).
+export { resolveCircle, clampToBounds };
 
 function flat(color, roughness = 0.95) {
   return new THREE.MeshStandardMaterial({ color, roughness, metalness: 0 });
@@ -61,35 +25,52 @@ export function buildCity(scene) {
   const colliders = [];
   const parkedCars = [];
   const trees = [];
+  const textures = buildTextures(CFG.seed);
+  const water = makeWaterMaterial();
 
   // --- Ground: one asphalt sheet for the whole city, then raised concrete
   // pads for each block, sand for the beach and water for the ocean.
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(900, 900), flat(0x3a3f45));
+  const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(900, 900),
+    new THREE.MeshStandardMaterial({ map: textures.asphalt, roughness: 0.95, metalness: 0 }),
+  );
   ground.rotation.x = -Math.PI / 2;
   ground.position.y = 0;
   scene.add(ground);
 
-  const beach = new THREE.Mesh(new THREE.PlaneGeometry(420, 26), flat(0xe0c98f));
+  const beach = new THREE.Mesh(
+    new THREE.PlaneGeometry(420, 26),
+    new THREE.MeshStandardMaterial({ map: textures.sand, roughness: 0.95, metalness: 0 }),
+  );
   beach.rotation.x = -Math.PI / 2;
   beach.position.set(0, 0.06, 204);
   scene.add(beach);
 
-  const ocean = new THREE.Mesh(
-    new THREE.PlaneGeometry(900, 300),
-    new THREE.MeshStandardMaterial({ color: 0x2f7fc4, roughness: 0.2, metalness: 0.15 }),
-  );
+  const ocean = new THREE.Mesh(new THREE.PlaneGeometry(900, 300), water);
   ocean.rotation.x = -Math.PI / 2;
   ocean.position.set(0, 0.03, 366);
   scene.add(ocean);
 
   // Marina basin: open water cut into the east edge.
-  const marinaWater = new THREE.Mesh(
-    new THREE.PlaneGeometry(46, 76),
-    new THREE.MeshStandardMaterial({ color: 0x2f7fc4, roughness: 0.2, metalness: 0.15 }),
-  );
+  const marinaWater = new THREE.Mesh(new THREE.PlaneGeometry(46, 76), water);
   marinaWater.rotation.x = -Math.PI / 2;
   marinaWater.position.set(170, 0.08, -24);
   scene.add(marinaWater);
+
+  // --- Lane dashes down the centre of every street, so the road lattice
+  // reads as roads and not bare asphalt.
+  const dashMat = new THREE.MeshBasicMaterial({ map: textures.laneDash, transparent: true, opacity: 0.85, depthWrite: false });
+  const dashGeo = new THREE.PlaneGeometry(384, 0.35);
+  for (const line of [-192, -144, -96, -48, 0, 48, 96, 144, 192]) {
+    const alongZ = new THREE.Mesh(dashGeo, dashMat);
+    alongZ.rotation.set(-Math.PI / 2, 0, Math.PI / 2);
+    alongZ.position.set(line, 0.02, 0);
+    scene.add(alongZ);
+    const alongX = new THREE.Mesh(dashGeo, dashMat);
+    alongX.rotation.x = -Math.PI / 2;
+    alongX.position.set(0, 0.02, line);
+    scene.add(alongX);
+  }
 
   // Block centres on the 48 m pitch.
   const centres = [];
@@ -103,14 +84,20 @@ export function buildCity(scene) {
   for (const bx of centres) {
     for (const bz of centres) {
       if (inPlaza(bx, bz) || inDocks(bx, bz) || inMarina(bx, bz)) continue;
-      const pad = new THREE.Mesh(new THREE.BoxGeometry(36, 0.3, 36), flat(0x9aa0a3));
+      const pad = new THREE.Mesh(
+        new THREE.BoxGeometry(36, 0.3, 36),
+        new THREE.MeshStandardMaterial({ map: textures.sidewalk, roughness: 0.95, metalness: 0 }),
+      );
       pad.position.set(bx, 0.15, bz);
       scene.add(pad);
 
       const roll = rng();
       if (roll < 0.1) {
         // Pocket park: trees and open grass.
-        const grass = new THREE.Mesh(new THREE.BoxGeometry(34, 0.35, 34), flat(0x6f9a55));
+        const grass = new THREE.Mesh(
+          new THREE.BoxGeometry(34, 0.35, 34),
+          new THREE.MeshStandardMaterial({ map: textures.grass, roughness: 0.95, metalness: 0 }),
+        );
         grass.position.set(bx, 0.18, bz);
         scene.add(grass);
         const count = int(rng, 3, 5);
@@ -133,7 +120,7 @@ export function buildCity(scene) {
         const oz = buildings === 1 ? range(rng, -3, 3) : range(rng, -3, 3);
         const x = bx + ox;
         const z = bz + oz;
-        const mesh = buildBuildingMesh(w, h, d, pick(rng, CFG.buildingColors), pick(rng, CFG.roofColors));
+        const mesh = buildBuildingMesh(w, h, d, pick(rng, CFG.buildingColors), pick(rng, CFG.roofColors), pick(rng, textures.facades));
         mesh.position.set(x, 0.3, z);
         scene.add(mesh);
         colliders.push({ minX: x - w / 2 - 0.4, maxX: x + w / 2 + 0.4, minZ: z - d / 2 - 0.4, maxZ: z + d / 2 + 0.4 });
@@ -145,7 +132,7 @@ export function buildCity(scene) {
   const plazaDisc = new THREE.Mesh(new THREE.CylinderGeometry(40, 40, 0.3, 40), flat(0xd8cfc0));
   plazaDisc.position.set(0, 0.15, 0);
   scene.add(plazaDisc);
-  const fountain = buildFountainMesh();
+  const fountain = buildFountainMesh(water);
   fountain.position.set(0, 0.3, 0);
   scene.add(fountain);
   colliders.push({ minX: -4.6, maxX: 4.6, minZ: -4.6, maxZ: 4.6 });
@@ -159,7 +146,7 @@ export function buildCity(scene) {
 
   // --- The Docks: warehouses on the south edge and piers over the water.
   for (const wx of [-48, 0, 48]) {
-    const warehouse = buildBuildingMesh(30, 9, 20, 0xb09a7a, 0x6f7d8c);
+    const warehouse = buildBuildingMesh(30, 9, 20, 0xb09a7a, 0x6f7d8c, pick(rng, textures.facades));
     warehouse.position.set(wx, 0.3, 168);
     scene.add(warehouse);
     colliders.push({ minX: wx - 15.4, maxX: wx + 15.4, minZ: 158, maxZ: 178.4 });
@@ -168,6 +155,8 @@ export function buildCity(scene) {
     const pier = new THREE.Mesh(new THREE.BoxGeometry(6, 0.6, 44), flat(0x8a6f4d));
     pier.position.set(px, 0.3, 214);
     scene.add(pier);
+    // Piers are raised walkways: cars and people stay off them.
+    colliders.push({ minX: px - 3, maxX: px + 3, minZ: 192, maxZ: 236 });
   }
 
   // --- Street trees along the sidewalks.
@@ -214,5 +203,6 @@ export function buildCity(scene) {
     plaza: { x: 0, z: 0 },
     docks: { x: 0, z: 168 },
     marina: { x: 168, z: -24 },
+    water, // the shared water shader material; the main loop animates it
   };
 }

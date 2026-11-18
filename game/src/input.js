@@ -7,11 +7,14 @@ export class Input {
     this.target = target;
     this.keys = new Set(); // currently held codes
     this.pressed = new Set(); // codes pressed since the last frame's read
+    this.clicked = false; // a left click (down + up, barely moved) this frame
     this.mouseDX = 0; // accumulated drag delta x since last read
     this.mouseDY = 0; // accumulated drag delta y since last read
     this.dragging = false;
     this.lastX = 0;
     this.lastY = 0;
+    this.downX = 0; // where the current press started, for click detection
+    this.downY = 0;
     this.enabled = true;
     this._onKeyDown = (event) => {
       if (!this.enabled) return;
@@ -29,6 +32,8 @@ export class Input {
       this.dragging = true;
       this.lastX = event.clientX;
       this.lastY = event.clientY;
+      this.downX = event.clientX;
+      this.downY = event.clientY;
     };
     this._onMouseMove = (event) => {
       if (!this.dragging || !this.enabled) return;
@@ -37,7 +42,11 @@ export class Input {
       this.lastX = event.clientX;
       this.lastY = event.clientY;
     };
-    this._onMouseUp = () => {
+    this._onMouseUp = (event) => {
+      // A press that barely moved is a click (a shot), not a camera drag.
+      if (this.dragging && Math.hypot(event.clientX - this.downX, event.clientY - this.downY) < 6) {
+        this.clicked = true;
+      }
       this.dragging = false;
     };
     this._onBlur = () => {
@@ -88,9 +97,20 @@ export class Input {
     return { dx, dy };
   }
 
+  // True once, on the frame a click landed. Consume it so one click fires
+  // one shot.
+  consumeClick() {
+    if (this.clicked) {
+      this.clicked = false;
+      return true;
+    }
+    return false;
+  }
+
   // Call at the end of each frame: presses not consumed this frame expire.
   endFrame() {
     this.pressed.clear();
+    this.clicked = false;
   }
 
   dispose() {

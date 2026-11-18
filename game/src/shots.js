@@ -20,7 +20,8 @@ export const SHOTS = {
     stars: 3,
     mission: 'Mission 3 — The Drop',
     objective: 'Lose the cruisers and make the delivery',
-    steps: 40,
+    steps: 24, // short: the cruisers close in during the steps, so fewer
+    // steps keep them in the frame instead of on top of the camera
   },
   drive: {
     mode: 'car',

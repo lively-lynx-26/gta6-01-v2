@@ -7,6 +7,7 @@ import * as THREE from 'three';
 import { CFG } from './config.js';
 import { buildPersonMesh } from './models.js';
 import { resolveCircle, clampToBounds } from './city.js';
+import { stepCar } from './physics.js';
 
 function lerpAngle(a, b, t) {
   let d = (b - a) % (Math.PI * 2);
@@ -35,7 +36,10 @@ export class Player {
     this.stars = 0;
     this.mission = 0;
     this.health = 100;
-    this.ammo = 12;
+    this.ammo = CFG.pistol.magazine;
+    this.carHealth = 100;
+    this.reloadTimer = 0;
+    this.onRam = null; // set by the main loop: a cruiser ram plays a crash
   }
 
   spawn(x, z, heading) {
@@ -46,6 +50,8 @@ export class Player {
     this.onFoot = true;
     this.car = null;
     this.carSpeed = 0;
+    this.carHealth = 100;
+    this.reloadTimer = 0;
     this.mesh.visible = true;
     this.mesh.position.set(x, 0, z);
     this.mesh.rotation.y = heading;
@@ -66,16 +72,18 @@ export class Player {
     return best;
   }
 
-  enterCar(car) {
+  enterCar(car, world) {
     car.taken = true;
     this.car = car;
     this.onFoot = false;
     this.carHeading = car.heading;
     this.carSpeed = 0;
+    this.carHealth = 100;
     this.x = car.x;
     this.z = car.z;
     this.heading = car.heading;
     this.mesh.visible = false;
+    if (world) world.carStolen();
   }
 
   exitCar() {
@@ -97,9 +105,9 @@ export class Player {
     this.mesh.rotation.y = this.heading;
   }
 
-  update(dt, input, cameraYaw) {
-    if (this.onFoot) this._updateFoot(dt, input, cameraYaw);
-    else this._updateCar(dt, input);
+  update(dt, input, cameraYaw, world) {
+    if (this.onFoot) this._updateFoot(dt, input, cameraYaw, world);
+    else this._updateCar(dt, input, world);
     // Write the visible transform.
     if (this.onFoot) {
       this.mesh.position.set(this.x, 0, this.z);
@@ -112,7 +120,7 @@ export class Player {
     }
   }
 
-  _updateFoot(dt, input, cameraYaw) {
+  _updateFoot(dt, input, cameraYaw, world) {
     const axes = input.axes();
     if (axes.x !== 0 || axes.y !== 0) {
       // Movement is relative to the camera: forward is where the camera looks.
@@ -145,53 +153,64 @@ export class Player {
 
     if (input.consume('KeyE')) {
       const car = this.nearestCar();
-      if (car) this.enterCar(car);
+      if (car) this.enterCar(car, world);
+    }
+
+    // The pistol: F or a mouse click fires, R reloads. A shot travels
+    // toward where the camera looks; the world resolves the hit, the
+    // noise, the fleeing pedestrians and the heat it raises.
+    if (this.reloadTimer > 0) {
+      this.reloadTimer -= dt;
+      if (this.reloadTimer <= 0) this.ammo = CFG.pistol.magazine;
+    }
+    if (input.consume('KeyR') && this.ammo < CFG.pistol.magazine && this.reloadTimer <= 0) {
+      this.reloadTimer = CFG.pistol.reloadSeconds;
+    }
+    const wantFire = (input.consume('KeyF') || input.consumeClick()) && this.reloadTimer <= 0;
+    if (wantFire && this.ammo > 0) {
+      this.ammo -= 1;
+      const dx = -Math.sin(cameraYaw);
+      const dz = -Math.cos(cameraYaw);
+      if (world) world.fireShot(this.x, this.z, dx, dz);
     }
   }
 
-  _updateCar(dt, input) {
+  _updateCar(dt, input, world) {
     const spec = this.car.spec;
     const axes = input.axes();
     // W/S: throttle and brake/reverse. S from a stop reverses.
-    if (axes.y > 0) {
-      this.carSpeed += spec.accel * dt;
-    } else if (axes.y < 0) {
-      if (this.carSpeed > 0.5) this.carSpeed -= spec.accel * 1.6 * dt; // brake
-      else this.carSpeed -= spec.accel * 0.55 * dt; // reverse
-    }
-    // Space is the handbrake.
+    let throttle = 0;
+    if (axes.y > 0) throttle = 1;
+    else if (axes.y < 0) throttle = -1;
+    if (this.carHealth <= 0) throttle = 0; // stalled: the car is wrecked
+    // Space is the handbrake: scrub speed before the physics step.
     if (input.down('Space')) this.carSpeed *= Math.max(0, 1 - 3.2 * dt);
-    // Drag and rolling resistance, then clamp to the car's limits.
-    this.carSpeed -= this.carSpeed * 0.55 * dt;
-    if (this.carSpeed > spec.maxSpeed) this.carSpeed = spec.maxSpeed;
-    if (this.carSpeed < -spec.reverseSpeed) this.carSpeed = -spec.reverseSpeed;
-    if (Math.abs(this.carSpeed) < 0.08 && axes.y === 0) this.carSpeed = 0;
 
-    // Steering: sharper at low speed, steadier at high speed.
-    const steerAuthority = 1 / (1 + Math.abs(this.carSpeed) * 0.045);
-    const turnRate = spec.turn * steerAuthority * (this.carSpeed >= 0 ? 1 : -1);
-    this.carHeading += -axes.x * turnRate * dt * Math.min(1, Math.abs(this.carSpeed) / 4 + 0.25);
-
-    const fx = Math.sin(this.carHeading);
-    const fz = Math.cos(this.carHeading);
-    this.x += fx * this.carSpeed * dt;
-    this.z += fz * this.carSpeed * dt;
+    const carState = { x: this.x, z: this.z, heading: this.carHeading, speed: this.carSpeed };
+    const impact = stepCar(carState, spec, throttle, axes.x, dt, this.city.colliders);
+    this.x = carState.x;
+    this.z = carState.z;
+    this.carHeading = carState.heading;
+    this.carSpeed = carState.speed;
     this.heading = this.carHeading;
 
-    const fixed = resolveCircle(this.city.colliders, this.x, this.z, CFG.carRadius);
-    if (fixed.hit) {
-      this.carSpeed *= 0.35; // a thud, not a stop
-      this.x = fixed.x;
-      this.z = fixed.z;
+    // A hard hit hurts the car and makes a sound.
+    if (impact > 15) {
+      this.carHealth = Math.max(0, this.carHealth - 5);
+      if (world) world.carCrashed(Math.min(1, impact / 55));
     }
-    const bounded = clampToBounds(this.x, this.z);
-    if (bounded.x !== this.x || bounded.z !== this.z) {
-      this.carSpeed *= 0.5;
-      this.x = bounded.x;
-      this.z = bounded.z;
+    // Running a pedestrian over: they go down, and the heat rises.
+    if (Math.abs(this.carSpeed) > 3 && world) {
+      const hit = world.pedsHit(this.x, this.z, 1.6);
+      if (hit.length > 0) this.carSpeed *= 0.6;
     }
 
     if (input.consume('KeyE')) this.exitCar();
+  }
+
+  // True while a reload is in progress.
+  get reloading() {
+    return this.reloadTimer > 0;
   }
 
   // Speed in miles per hour for the HUD.
@@ -224,7 +243,8 @@ export class Player {
     this.mission = data.mission ?? 0;
     this.stars = data.stars ?? 0;
     this.health = 100;
-    this.ammo = 12;
+    this.ammo = CFG.pistol.magazine;
+    this.carHealth = 100;
     if (data.onFoot || !data.carType) {
       this.spawn(data.x ?? 0, data.z ?? -60, data.heading ?? 0);
       return;

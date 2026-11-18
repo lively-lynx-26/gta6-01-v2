@@ -10,6 +10,12 @@ import { hasSave, saveGame, loadGame } from './save.js';
 import { buildCity } from './city.js';
 import { Player } from './player.js';
 import { SHOTS } from './shots.js';
+import { animateWater } from './shaders.js';
+import { AudioEngine } from './audio.js';
+import { Traffic } from './traffic.js';
+import { Pedestrians } from './pedestrians.js';
+import { Police } from './police.js';
+import { Enemies } from './enemies.js';
 
 const params = new URLSearchParams(window.location.search);
 const shotName = params.get('shot');
@@ -115,6 +121,39 @@ function animateSky(time) {
 const city = buildCity(scene);
 const player = new Player(scene, city);
 const input = new Input(window);
+const traffic = new Traffic(scene, city);
+const pedestrians = new Pedestrians(scene, city);
+const police = new Police(scene, city, player);
+const enemies = new Enemies(scene, city);
+const audio = new AudioEngine();
+
+// The world the player acts on: a gunshot is heard, makes pedestrians flee
+// and raises the heat; stealing a car raises the heat; a crash makes a
+// sound; a car that hits a pedestrian knocks them down and raises the heat.
+const world = {
+  fireShot(x, z, dx, dz) {
+    enemies.shootAt(x, z, dx, dz);
+    audio.gunshot(1);
+    pedestrians.onGunshot(x, z);
+    police.addHeat(CFG.pistol.heatPerShot);
+  },
+  carStolen() {
+    police.addHeat(1);
+  },
+  carCrashed(strength) {
+    audio.crash(strength);
+  },
+  pedsHit(x, z, radius) {
+    const hit = pedestrians.checkVehicleHit(x, z, radius);
+    for (const ped of hit) police.addHeat(1);
+    return hit;
+  },
+};
+player.onRam = () => audio.crash(0.7);
+
+// Audio unlocks on the first gesture (a browser rule), and M mutes.
+window.addEventListener('keydown', () => audio.unlock(), { once: true });
+window.addEventListener('mousedown', () => audio.unlock(), { once: true });
 
 // --- HUD and menus ------------------------------------------------------------
 const el = (id) => document.getElementById(id);
@@ -154,10 +193,10 @@ function updateHud() {
   el('hud-cash').textContent = `$${player.cash.toLocaleString('en-US')}`;
   el('hud-stars').textContent = '★'.repeat(player.stars) + '☆'.repeat(5 - player.stars);
   el('hud-health-fill').style.width = `${Math.max(0, player.health)}%`;
-  el('hud-car-fill').style.width = player.onFoot ? '0%' : '100%';
+  el('hud-car-fill').style.width = player.onFoot ? '0%' : `${Math.max(0, player.carHealth)}%`;
   el('hud-speed').innerHTML = `${player.speedMph()} <small>MPH</small>`;
   el('hud-vehicle').textContent = player.vehicleName();
-  el('hud-ammo').textContent = `PISTOL ${player.ammo}/12`;
+  el('hud-ammo').textContent = player.reloading ? 'RELOADING' : `PISTOL ${player.ammo}/12`;
 }
 
 function newGame() {
@@ -165,7 +204,11 @@ function newGame() {
   player.mission = 0;
   player.stars = 0;
   player.health = 100;
-  player.ammo = 12;
+  player.ammo = CFG.pistol.magazine;
+  player.carHealth = 100;
+  police.clearCruisers();
+  police.setStars(0);
+  enemies.clear();
   missionTitle = 'Free roam';
   missionObjective = 'Explore Solmar Bay';
   player.spawn(0, -60, 0);
@@ -184,6 +227,9 @@ function continueGame() {
     return;
   }
   player.restore(data);
+  police.clearCruisers();
+  police.setStars(data.stars ?? 0);
+  enemies.clear();
   missionTitle = data.mission > 0 ? `Mission ${data.mission + 1}` : 'Free roam';
   missionObjective = 'Explore Solmar Bay';
   cameraYaw = player.heading + Math.PI;
@@ -262,12 +308,14 @@ function applyShot() {
   player.cash = shot.cash;
   player.stars = shot.stars;
   player.health = 100;
-  player.ammo = 12;
+  player.ammo = CFG.pistol.magazine;
+  player.carHealth = 100;
   missionTitle = shot.mission;
   missionObjective = shot.objective;
   cameraYaw = shot.heading + Math.PI;
   cameraPitch = shot.cameraPitch;
   cameraDistance = shot.cameraDistance;
+  police.setStars(shot.stars);
   if (shot.mode === 'car') {
     // Find a parked car of the wanted type, or take the nearest one.
     let car = city.parkedCars.find((c) => c.type === shot.carType && !c.taken);
@@ -282,6 +330,17 @@ function applyShot() {
     }
   } else {
     player.spawn(shot.x, shot.z, shot.heading);
+  }
+  // The chase shot shows the pursuit: three cruisers in a wedge around the
+  // Comet GT. The Docks shot shows the fight: two goons ahead of Dario.
+  if (shotName === 'chase' && shot.stars >= 3) police.spawnForShot(3);
+  if (shotName === 'mission') {
+    const fx = Math.sin(shot.heading);
+    const fz = Math.cos(shot.heading);
+    const rx = -fz;
+    const rz = fx;
+    enemies.spawn(shot.x + fx * 10 + rx * 4, shot.z + fz * 10 + rz * 4);
+    enemies.spawn(shot.x + fx * 12 - rx * 4, shot.z + fz * 12 - rz * 4);
   }
   // Advance a fixed number of fixed-length steps: no wall clock, so the
   // frame is identical on every run.
@@ -298,6 +357,14 @@ function applyShot() {
       player.car.mesh.rotation.y = player.carHeading;
     }
     animateSky(skyTime);
+    animateWater(city.water, skyTime);
+    const playerCar = player.onFoot
+      ? null
+      : { x: player.x, z: player.z, heading: player.carHeading, speed: player.carSpeed };
+    traffic.update(fixedDt, playerCar);
+    pedestrians.update(fixedDt);
+    police.update(fixedDt);
+    enemies.update(fixedDt, player, null);
   }
   updateCamera(0, true);
   updateHud();
@@ -317,15 +384,34 @@ function loop() {
   if (state === 'playing') {
     skyTime += dt;
     animateSky(skyTime);
-    player.update(dt, input, cameraYaw);
+    animateWater(city.water, skyTime);
+    if (input.consume('KeyM')) audio.setMuted(!audio.muted);
+    player.update(dt, input, cameraYaw, world);
+    const playerCar = player.onFoot
+      ? null
+      : { x: player.x, z: player.z, heading: player.carHeading, speed: player.carSpeed };
+    traffic.update(dt, playerCar);
+    pedestrians.update(dt);
+    police.update(dt);
+    enemies.update(dt, player, (dist) => audio.gunshot(Math.max(0.15, 1 - dist / 60)));
+    audio.update({
+      driving: !player.onFoot && Math.abs(player.carSpeed) > 0.5,
+      speed01: player.onFoot ? player.speed / CFG.walkSpeed : Math.abs(player.carSpeed) / 55,
+      sirenDistance: police.nearestCruiserDistance(),
+    });
     updateCamera(dt);
     updateHud();
     if (input.consume('Escape')) pauseGame();
   } else if (state === 'paused') {
+    audio.update({ driving: false, speed01: 0, sirenDistance: null });
     if (input.consume('Escape') || input.consume('KeyP')) resumeGame();
   } else if (state === 'menu') {
     skyTime += dt;
     animateSky(skyTime);
+    animateWater(city.water, skyTime);
+    // The city lives behind the menu: traffic cruises, residents stroll.
+    traffic.update(dt, null);
+    pedestrians.update(dt);
     menuAngle += dt * 0.045;
     camera.position.set(Math.cos(menuAngle) * 120, 42, Math.sin(menuAngle) * 120);
     camera.lookAt(0, 4, 0);
@@ -343,7 +429,12 @@ function loop() {
 // In shot mode the frame is rendered once, deterministically, and no loop
 // runs: the harness screenshots the frozen frame. In live mode the loop runs.
 // Debug hook for automated verification (harmless in the shipped game).
-window.__game = { player, city, input };
+window.__game = {
+  player, city, input, traffic, pedestrians, police, enemies, audio,
+  get cameraYaw() {
+    return cameraYaw;
+  },
+};
 
 document.getElementById('loading').style.display = 'none';
 if (shot) {

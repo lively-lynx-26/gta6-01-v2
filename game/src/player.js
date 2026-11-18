@@ -53,14 +53,21 @@ export class Player {
     this.carHealthMax = 100;
     this.reloadTimer = 0;
     this.onRam = null; // set by the main loop: a cruiser ram plays a crash
-    // Weapons in slots 1-3: the pistol Dario starts with, the Squall SMG
-    // (mission 2 or the gun shop) and the Breaker 12 shotgun (mission 4
-    // or the gun shop). Slot 4 stays empty.
+    // Weapons in slots 1-6: fists (always), the bat (gun shop), the
+    // pistol Dario starts with, the Squall SMG (mission 2 or the gun
+    // shop), the Breaker 12 shotgun (mission 4 or the gun shop), and the
+    // Longshot rifle (gun shop).
     this.weapon = 'pistol';
-    this.weapons = { smg: false, shotgun: false };
+    this.weapons = { smg: false, shotgun: false, bat: false, rifle: false };
     this.ammoSmg = 0;
     this.ammoShotgun = 0;
+    this.ammoRifle = 0;
     this.fireTimer = 0; // SMG hold-to-fire cooldown
+    this.meleeTimer = 0; // fists / bat swing cooldown
+    this.comboCount = 0; // punches in a row; the third lands harder
+    this.airborne = null; // { vy, y, t, x0, z0 } while a stunt jump flies
+    this.airY = 0; // metres above the ground while a jump is in the air
+    this.onJumpLanded = null; // set by the main loop: (airTime, dist) => {}
     // Progression: REP and its rank, the garage upgrades, the safehouse,
     // and the cars Dario has driven (the garage collection).
     this.rep = 0;
@@ -108,31 +115,53 @@ export class Player {
     return v < 0.5 ? 0 : 1 + Math.floor(ratio * 4.99);
   }
 
-  // Switch to a weapon slot: 1 pistol, 2 SMG, 3 shotgun. Locked slots
-  // stay on the current weapon.
+  // Switch to a weapon slot: 1 fists, 2 bat, 3 pistol, 4 SMG, 5
+  // shotgun, 6 rifle. Locked slots stay on the current weapon.
   selectWeapon(slot) {
-    if (slot === 1) this.weapon = 'pistol';
-    else if (slot === 2 && this.weapons.smg) this.weapon = 'smg';
-    else if (slot === 3 && this.weapons.shotgun) this.weapon = 'shotgun';
+    if (slot === 1) this.weapon = 'fists';
+    else if (slot === 2 && this.weapons.bat) this.weapon = 'bat';
+    else if (slot === 3) this.weapon = 'pistol';
+    else if (slot === 4 && this.weapons.smg) this.weapon = 'smg';
+    else if (slot === 5 && this.weapons.shotgun) this.weapon = 'shotgun';
+    else if (slot === 6 && this.weapons.rifle) this.weapon = 'rifle';
   }
 
-  // Ammunition of the current weapon, for the HUD.
+  // True for the two melee weapons: no ammo, no reload, a swing instead.
+  get isMelee() {
+    return this.weapon === 'fists' || this.weapon === 'bat';
+  }
+
+  // Ammunition of the current weapon, for the HUD. Melee has none.
   weaponAmmo() {
     if (this.weapon === 'smg') return this.ammoSmg;
     if (this.weapon === 'shotgun') return this.ammoShotgun;
+    if (this.weapon === 'rifle') return this.ammoRifle;
+    if (this.isMelee) return null;
     return this.ammo;
   }
 
   weaponMagazine() {
     if (this.weapon === 'smg') return CFG.smg.magazine;
     if (this.weapon === 'shotgun') return CFG.shotgun.magazine;
+    if (this.weapon === 'rifle') return CFG.rifle.magazine;
+    if (this.isMelee) return null;
     return CFG.pistol.magazine;
   }
 
   weaponName() {
     if (this.weapon === 'smg') return CFG.smg.name.toUpperCase();
     if (this.weapon === 'shotgun') return CFG.shotgun.name.toUpperCase();
+    if (this.weapon === 'rifle') return CFG.rifle.name.toUpperCase();
+    if (this.weapon === 'fists') return 'FISTS';
+    if (this.weapon === 'bat') return 'BAT';
     return 'PISTOL';
+  }
+
+  // Launch a stunt jump: the car leaves the ground with an upward
+  // velocity and flies ballistically until it lands.
+  startJump(vy) {
+    if (this.airborne) return;
+    this.airborne = { vy, y: 0, t: 0, x0: this.x, z0: this.z };
   }
 
   spawn(x, z, heading) {
@@ -154,6 +183,10 @@ export class Player {
     this.bikeLean = 0;
     this.carSpeed = 0;
     this.boatSpeed = 0;
+    this.airborne = null;
+    this.airY = 0;
+    this.meleeTimer = 0;
+    this.comboCount = 0;
     this.carHealth = this.carHealthMax;
     this.reloadTimer = 0;
     this.mesh.visible = true;
@@ -329,13 +362,13 @@ export class Player {
         u.torso.rotation.x *= k;
       }
     } else if (this.car) {
-      this.car.mesh.position.set(this.x, 0, this.z);
+      this.car.mesh.position.set(this.x, this.airY, this.z);
       this.car.mesh.rotation.y = this.carHeading;
       if (this.car.spec.body === 'bike') {
         // The bike leans into its turns, and the rider stays seated on it.
         this.car.mesh.userData.lean.rotation.z = this.bikeLean;
         this.mesh.visible = true;
-        this.mesh.position.set(this.x, 0, this.z);
+        this.mesh.position.set(this.x, this.airY, this.z);
         this.mesh.rotation.y = this.carHeading;
         this._seatedPose();
       }
@@ -397,20 +430,45 @@ export class Player {
       }
     }
 
-    // Weapon slots: 1 pistol, 2 SMG, 3 shotgun. Locked slots are ignored.
+    // Weapon slots: 1 fists, 2 bat, 3 pistol, 4 SMG, 5 shotgun, 6 rifle.
+    // Locked slots are ignored.
     if (input.consume('Digit1')) this.selectWeapon(1);
     if (input.consume('Digit2')) this.selectWeapon(2);
     if (input.consume('Digit3')) this.selectWeapon(3);
+    if (input.consume('Digit4')) this.selectWeapon(4);
+    if (input.consume('Digit5')) this.selectWeapon(5);
+    if (input.consume('Digit6')) this.selectWeapon(6);
 
-    // Firing: the pistol and shotgun fire once per press (F or a mouse
-    // click), the SMG fires while the key is held. A shot travels toward
-    // where the camera looks; the world resolves the hit, the noise, the
-    // fleeing pedestrians and the heat it raises.
+    // Melee: fists and the bat swing on F or a mouse click, with a short
+    // cooldown. Punches combo: every third punch in a row lands harder.
+    // A swing travels toward where the camera looks; the world resolves
+    // the hit and shows the damage.
+    this.meleeTimer = Math.max(0, this.meleeTimer - dt);
+    if (this.isMelee) {
+      const swingSeconds = this.weapon === 'bat' ? CFG.bat.swingSeconds : CFG.fists.swingSeconds;
+      if ((input.consume('KeyF') || input.consumeClick()) && this.meleeTimer <= 0) {
+        this.meleeTimer = swingSeconds;
+        this.comboCount = this.weapon === 'fists' ? this.comboCount + 1 : 0;
+        const damage = this.weapon === 'bat' ? CFG.bat.damage
+          : (this.comboCount % 3 === 0 ? CFG.fists.comboDamage : CFG.fists.damage);
+        const range = this.weapon === 'bat' ? CFG.bat.range : CFG.fists.range;
+        const dx = -Math.sin(cameraYaw);
+        const dz = -Math.cos(cameraYaw);
+        if (world) world.melee(this.x, this.z, dx, dz, this.weapon, damage, range);
+      }
+      return;
+    }
+
+    // Firing: the pistol, shotgun and rifle fire once per press (F or a
+    // mouse click), the SMG fires while the key is held. A shot travels
+    // toward where the camera looks; the world resolves the hit, the
+    // noise, the fleeing pedestrians and the heat it raises.
     if (this.reloadTimer > 0) {
       this.reloadTimer -= dt;
       if (this.reloadTimer <= 0) {
         if (this.weapon === 'smg') this.ammoSmg = CFG.smg.magazine;
         else if (this.weapon === 'shotgun') this.ammoShotgun = CFG.shotgun.magazine;
+        else if (this.weapon === 'rifle') this.ammoRifle = CFG.rifle.magazine;
         else this.ammo = CFG.pistol.magazine;
       }
     }
@@ -420,6 +478,7 @@ export class Player {
     if (input.consume('KeyR') && ammoNow < mag && this.reloadTimer <= 0) {
       this.reloadTimer = this.weapon === 'smg' ? CFG.smg.reloadSeconds
         : this.weapon === 'shotgun' ? CFG.shotgun.reloadSeconds
+        : this.weapon === 'rifle' ? CFG.rifle.reloadSeconds
         : CFG.pistol.reloadSeconds;
     }
     const wantFire = this.weapon === 'smg'
@@ -431,6 +490,8 @@ export class Player {
         this.fireTimer = CFG.smg.fireInterval;
       } else if (this.weapon === 'shotgun') {
         this.ammoShotgun -= 1;
+      } else if (this.weapon === 'rifle') {
+        this.ammoRifle -= 1;
       } else {
         this.ammo -= 1;
       }
@@ -441,6 +502,31 @@ export class Player {
   }
 
   _updateCar(dt, input, world) {
+    // Mid-jump: the car flies ballistically — forward at its launch
+    // speed, gravity pulling it down — with no ground collision until it
+    // lands. Landing reports the airtime and distance for the score.
+    if (this.airborne) {
+      const a = this.airborne;
+      a.t += dt;
+      a.vy -= 22 * dt;
+      a.y += a.vy * dt;
+      const fx = Math.sin(this.carHeading);
+      const fz = Math.cos(this.carHeading);
+      this.x += fx * this.carSpeed * dt;
+      this.z += fz * this.carSpeed * dt;
+      this.car.x = this.x;
+      this.car.z = this.z;
+      if (a.y <= 0) {
+        const dist = Math.hypot(this.x - a.x0, this.z - a.z0);
+        const airTime = a.t;
+        this.airborne = null;
+        this.airY = 0;
+        if (this.onJumpLanded) this.onJumpLanded(airTime, dist);
+      } else {
+        this.airY = a.y;
+      }
+      return;
+    }
     const nitroActive = input.down('ShiftLeft') && this.nitro;
     const spec = this.effectiveSpec(nitroActive);
     const axes = input.axes();
@@ -563,7 +649,7 @@ export class Player {
       heading: this.heading,
       rep: this.rep,
       armor: this.armor,
-      weapons: { smg: this.weapons.smg, shotgun: this.weapons.shotgun },
+      weapons: { smg: this.weapons.smg, shotgun: this.weapons.shotgun, bat: this.weapons.bat, rifle: this.weapons.rifle },
       engineLevel: this.engineLevel,
       armorLevel: this.armorLevel,
       nitro: this.nitro,
@@ -587,9 +673,12 @@ export class Player {
     this.weapons = {
       smg: data.weapons?.smg ?? false,
       shotgun: data.weapons?.shotgun ?? false,
+      bat: data.weapons?.bat ?? false,
+      rifle: data.weapons?.rifle ?? false,
     };
     this.ammoSmg = this.weapons.smg ? CFG.smg.magazine : 0;
     this.ammoShotgun = this.weapons.shotgun ? CFG.shotgun.magazine : 0;
+    this.ammoRifle = this.weapons.rifle ? CFG.rifle.magazine : 0;
     this.engineLevel = data.engineLevel ?? 0;
     this.armorLevel = data.armorLevel ?? 0;
     this.nitro = data.nitro ?? false;

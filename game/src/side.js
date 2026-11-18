@@ -65,6 +65,30 @@ export class SideActivities {
     scene.add(this.raceTargetMarker);
     this.raceCooldown = 0;
 
+    // --- Stunt jumps: three ramps around the city, each with a marker.
+    // Cross one fast in a car or on a bike and the jump is scored.
+    this.ramps = [];
+    this.bestJump = { air: 0, dist: 0 };
+    for (const r of CFG.jumps) {
+      const ramp = new THREE.Mesh(
+        new THREE.BoxGeometry(6, 0.5, 8),
+        new THREE.MeshStandardMaterial({ color: 0xff5a3c, roughness: 0.6, metalness: 0.1 }),
+      );
+      ramp.position.set(r.x, 0.55, r.z);
+      ramp.rotation.y = r.heading;
+      ramp.rotation.x = -0.42;
+      scene.add(ramp);
+      const marker = markerMesh(0xff5a3c);
+      marker.position.set(r.x, 3.4, r.z);
+      scene.add(marker);
+      this.ramps.push({ ...r, mesh: ramp, marker });
+    }
+
+    // --- Random events: a mugging to interrupt, a hitchhiker to drive.
+    // One at a time, after the first job, on a seeded gap.
+    this.event = null; // { type, ped, mugger, x, z, drop, stage, timer }
+    this.eventTimer = CFG.events.firstAfter;
+
     // Callbacks the main loop wires up: onPay(amount, label) and
     // onRep(amount, label) for cash and REP, onPopup for floating text.
     this.onPay = null;
@@ -96,6 +120,22 @@ export class SideActivities {
     this.fareCooldown = 8;
     this.race = null;
     this.raceCooldown = 0;
+    this.bestJump = { air: 0, dist: 0 };
+    this._clearEvent();
+    this.eventTimer = CFG.events.firstAfter;
+  }
+
+  // A jump just landed: score it on distance, pay by the metre, and
+  // keep the best one for the stats.
+  recordJump(airTime, dist) {
+    const metres = Math.round(dist);
+    const pay = Math.min(CFG.jumpPayCap, Math.round(dist * CFG.jumpPayPerMetre));
+    if (metres > this.bestJump.dist) this.bestJump = { air: Math.round(airTime * 10) / 10, dist: metres };
+    if (this.onPay) this.onPay(pay, 'Stunt jump');
+    if (this.onRep) this.onRep(CFG.repJump, 'Stunt jump');
+    if (this.onPopup) {
+      this.onPopup(this.player.x, 2.2, this.player.z, `STUNT JUMP ${metres}m +$${pay}`, 'stunt');
+    }
   }
 
   // Restore shells from a save: the first `found` shells (in seed order)
@@ -152,9 +192,149 @@ export class SideActivities {
     this.fareCooldown = 10;
   }
 
+  // --- Random events -------------------------------------------------------
+  _clearEvent() {
+    if (!this.event) return;
+    if (this.event.ped) this.scene.remove(this.event.ped);
+    if (this.event.mugger) this.scene.remove(this.event.mugger);
+    if (this.event.marker) this.scene.remove(this.event.marker);
+    this.event = null;
+  }
+
+  // Start one event: a mugging (a mugger corners a resident) or a
+  // hitchhiker (a resident waving for a lift), at a street point.
+  _spawnEvent() {
+    const spot = streetPoint(this.rng);
+    if (this.rng() < 0.5) {
+      const victim = buildPedestrianMesh({
+        shirt: 0xd9a441, pants: 0x2b2f38, skin: 0xc98e6b, hairStyle: 'short',
+      });
+      victim.position.set(spot.x, 0, spot.z);
+      this.scene.add(victim);
+      const mugger = buildPedestrianMesh({
+        shirt: 0x1c1c22, pants: 0x222226, skin: 0x8a5a3b, hairStyle: 'short', armed: true,
+      });
+      mugger.position.set(spot.x + 1.5, 0, spot.z + 1);
+      this.scene.add(mugger);
+      this.event = { type: 'mugging', ped: victim, mugger, x: spot.x, z: spot.z, timer: 0, fled: false, fleeTimer: 0 };
+    } else {
+      const ped = buildPedestrianMesh({
+        shirt: 0x7fd4ff, pants: 0x2b2f38, skin: 0xb98a68, hairStyle: 'short',
+      });
+      ped.position.set(spot.x, 0, spot.z);
+      this.scene.add(ped);
+      const marker = markerMesh(0x7fd4ff);
+      marker.position.set(spot.x, 2.4, spot.z);
+      this.scene.add(marker);
+      let drop = streetPoint(this.rng);
+      while (Math.hypot(drop.x - spot.x, drop.z - spot.z) < 100) {
+        drop = streetPoint(this.rng);
+      }
+      this.event = { type: 'hitch', ped, marker, x: spot.x, z: spot.z, drop, stage: 'waiting', timer: 0, waitTimer: 0 };
+    }
+  }
+
+  // One event step. A mugging pays when Dario gets close and the mugger
+  // runs; a hitchhiker pays when Dario stops in a car, then drives them
+  // to the drop-off.
+  _updateEvent(dt) {
+    const p = this.player;
+    const ev = this.event;
+    if (!ev) return;
+    ev.timer += dt;
+    if (ev.type === 'mugging') {
+      if (!ev.fled) {
+        // Dario shows up: the mugger runs for it.
+        if (Math.hypot(p.x - ev.x, p.z - ev.z) < 8) {
+          ev.fled = true;
+          ev.fleeTimer = 6;
+          if (this.onPay) this.onPay(CFG.events.muggingReward, 'Mugging stopped');
+          if (this.onRep) this.onRep(CFG.repJump, 'Mugging stopped');
+          if (this.onPopup) this.onPopup(p.x, 2.2, p.z, `MUGGING STOPPED +$${CFG.events.muggingReward}`, 'rep');
+        } else if (ev.timer > 60) {
+          this._clearEvent();
+        }
+        return;
+      }
+      // The mugger flees from the player, then disappears.
+      const dx = ev.mugger.position.x - p.x;
+      const dz = ev.mugger.position.z - p.z;
+      const d = Math.hypot(dx, dz) || 1;
+      ev.mugger.position.x += (dx / d) * 5 * dt;
+      ev.mugger.position.z += (dz / d) * 5 * dt;
+      ev.fleeTimer -= dt;
+      if (ev.fleeTimer <= 0) this._clearEvent();
+      return;
+    }
+    // Hitchhiker.
+    if (ev.stage === 'waiting') {
+      ev.marker.rotation.y += dt * 1.5;
+      ev.marker.position.y = 2.4 + Math.sin(this.time * 2.5) * 0.3;
+      const inCar = !p.onFoot && p.car;
+      const near = Math.hypot(p.x - ev.x, p.z - ev.z) < 5;
+      if (inCar && near && Math.abs(p.carSpeed) < 1) {
+        ev.waitTimer += dt;
+        if (ev.waitTimer >= 1.5) {
+          ev.stage = 'aboard';
+          this.scene.remove(ev.ped);
+          ev.ped = null;
+          ev.marker.position.set(ev.drop.x, 2.4, ev.drop.z);
+          if (this.onPopup) this.onPopup(p.x, 2, p.z, 'HITCHHIKER ON BOARD', 'rep');
+        }
+      } else {
+        ev.waitTimer = 0;
+      }
+      if (ev.timer > 90) this._clearEvent();
+      return;
+    }
+    // Aboard: drive them to the drop-off. Leaving the car cancels it.
+    if (p.onFoot) {
+      this._clearEvent();
+      return;
+    }
+    ev.marker.rotation.y += dt * 1.5;
+    if (Math.hypot(p.x - ev.drop.x, p.z - ev.drop.z) < 10) {
+      if (this.onPay) this.onPay(CFG.events.hitchReward, 'Hitchhiker');
+      if (this.onRep) this.onRep(CFG.repFare, 'Hitchhiker');
+      if (this.onPopup) this.onPopup(p.x, 2, p.z, `HITCHHIKER +$${CFG.events.hitchReward}`, 'rep');
+      this._clearEvent();
+    } else if (ev.timer > 180) {
+      this._clearEvent();
+    }
+  }
+
   update(dt, missionIndex) {
     this.time += dt;
     const p = this.player;
+
+    // Stunt jumps: the ramp markers bob; crossing one fast in a car or
+    // on a bike, roughly along its direction, launches the jump.
+    for (const r of this.ramps) {
+      r.marker.rotation.y += dt * 1.5;
+      r.marker.position.y = 3.4 + Math.sin(this.time * 2 + r.x) * 0.3;
+      if (p.airborne || p.onFoot || p.boat || p.flying) continue;
+      const speed = Math.abs(p.carSpeed);
+      if (speed < r.minSpeed) continue;
+      const d = Math.hypot(p.x - r.x, p.z - r.z);
+      if (d > 7) continue;
+      const along = Math.sin(p.carHeading) * Math.sin(r.heading)
+        + Math.cos(p.carHeading) * Math.cos(r.heading);
+      if (along < 0.6) continue;
+      p.startJump(8 + speed * 0.18);
+    }
+
+    // Random events: one at a time, after the first job, on a gap.
+    if (missionIndex >= 1) {
+      if (!this.event) {
+        this.eventTimer -= dt;
+        if (this.eventTimer <= 0) this._spawnEvent();
+      } else {
+        this._updateEvent(dt);
+        if (!this.event) {
+          this.eventTimer = CFG.events.gap[0] + this.rng() * (CFG.events.gap[1] - CFG.events.gap[0]);
+        }
+      }
+    }
 
     // Shells bob and shine; walking or driving over one collects it.
     for (const s of this.shells) {

@@ -113,7 +113,7 @@ export class Minimap {
     }
 
     // Boats: light-blue dots on the water. The helipad: a yellow H on
-    // the beach by the Marina.
+    // the beach by the Marina. Owned properties: green $ dots.
     if (state.vehicles) {
       ctx.fillStyle = 'rgba(127, 212, 255, 0.9)';
       for (const boat of state.vehicles.boats) {
@@ -131,6 +131,21 @@ export class Minimap {
       ctx.font = 'bold 7px system-ui, sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText('H', hx, hy + 2.5);
+    }
+    if (state.properties) {
+      ctx.fillStyle = '#7dff9a';
+      ctx.font = 'bold 7px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      for (const m of state.properties.markers()) {
+        const mx = this._x(m.x);
+        const my = this._y(m.z);
+        ctx.beginPath();
+        ctx.arc(mx, my, 4.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#101820';
+        ctx.fillText(m.icon, mx, my + 2.5);
+        ctx.fillStyle = '#7dff9a';
+      }
     }
 
     // Police cruisers: flashing red and blue, like their light bars.

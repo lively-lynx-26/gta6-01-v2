@@ -141,6 +141,21 @@ export class CityMap {
       ctx.fillText(lm.icon, px, py + 4);
     }
 
+    // Owned properties: green $ badges, so what Dario owns reads on
+    // the map.
+    if (state.properties) {
+      for (const m of state.properties.markers()) {
+        const px = this._x(m.x);
+        const py = this._y(m.z);
+        ctx.fillStyle = '#7dff9a';
+        ctx.beginPath();
+        ctx.arc(px, py, 8, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#101820';
+        ctx.fillText(m.icon, px, py + 4);
+      }
+    }
+
     // Mission waypoint: a pulsing gold diamond.
     const wp = state.missions.waypoint;
     if (wp) {
@@ -235,6 +250,8 @@ export class CityMap {
       <div>CARS STOLEN <b>${state.carsStolen}</b></div>
       <div>COPS LOST <b>${state.copsLost}</b></div>
       <div>GOLDEN SHELLS <b>${state.side.shellsFound} / ${CFG.shells}</b></div>
+      <div>BEST JUMP <b>${state.side.bestJump.dist > 0 ? `${state.side.bestJump.dist}m (${state.side.bestJump.air}s)` : '—'}</b></div>
+      <div>PROPERTIES <b>${state.properties ? state.properties.ownedLabel() : '—'}</b></div>
       <div>COMPLETION <b>${comp}%</b></div>
       <div>SAFEHOUSE <b>${state.safehouse ? 'OWNED' : '—'}</b></div>`;
   }

@@ -23,8 +23,8 @@
   #hud-rep { font-size: 14px; font-weight: 700; color: #7fd4ff; text-shadow: 0 1px 4px rgba(0,0,0,0.7); margin-top: 4px; }
   #hud-rep-bar { height: 6px; background: rgba(0,0,0,0.55); border: 1px solid rgba(255,255,255,0.35); border-radius: 3px; overflow: hidden; margin-top: 3px; width: 200px; }
   #hud-rep-fill { height: 100%; background: #7fd4ff; width: 0%; }
-  #hud-side { font-size: 13px; color: #ffe9a8; text-shadow: 0 1px 4px rgba(0,0,0,0.7); margin-top: 4px; }
-  #hud-response { position: absolute; top: 150px; left: 14px; width: 250px; font-size: 12px; background: rgba(8,16,24,0.72); border: 1px solid rgba(255,255,255,0.22); border-radius: 8px; padding: 8px 10px; }
+  #hud-side { font-size: 13px; color: #ffe9a8; text-shadow: 0 1px 4px rgba(0,0,0,0.7); margin-top: 4px; max-width: 260px; }
+  #hud-response { position: absolute; top: 196px; left: 14px; width: 250px; font-size: 12px; background: rgba(8,16,24,0.72); border: 1px solid rgba(255,255,255,0.22); border-radius: 8px; padding: 8px 10px; }
   #hud-response-title { font-size: 11px; letter-spacing: 0.16em; color: #ff8a7a; margin-bottom: 5px; }
   .resp-row { display: flex; justify-content: space-between; gap: 6px; padding: 2px 0; }
   .resp-unit { font-weight: 700; }
@@ -86,7 +86,24 @@
   #hud-ammo { font-size: 13px; opacity: 0.9; margin-top: 2px; text-shadow: 0 1px 4px rgba(0,0,0,0.7); }
   #hud-hint { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); font-size: 12px; opacity: 0.75; text-shadow: 0 1px 4px rgba(0,0,0,0.8); }
   #hud-banner { position: absolute; top: 26%; left: 0; right: 0; text-align: center; font-size: 32px; font-weight: 900; letter-spacing: 0.08em; color: #ffe9a8; text-shadow: 0 0 18px rgba(255,190,60,0.6), 0 3px 0 rgba(0,0,0,0.5); }
-  /* Menus */
+  /* Phone */
+  #phone-overlay { position: fixed; top: 0; right: 0; bottom: 0; display: none; align-items: center; justify-content: flex-end; padding-right: 24px; z-index: 14; pointer-events: none; }
+  #phone { width: 300px; max-height: 88vh; background: rgba(10, 18, 26, 0.96); border: 1px solid rgba(255,255,255,0.3); border-radius: 22px; padding: 14px; pointer-events: auto; box-shadow: 0 8px 32px rgba(0,0,0,0.6); display: flex; flex-direction: column; }
+  #phone-head { display: flex; justify-content: space-between; font-size: 12px; font-weight: 800; letter-spacing: 0.12em; color: #7fd4ff; margin-bottom: 10px; }
+  #phone-tabs { display: flex; gap: 6px; margin-bottom: 10px; }
+  #phone-tabs button { flex: 1; font-size: 11px; padding: 8px 4px; background: rgba(255,255,255,0.1); color: #eef4f6; border-radius: 6px; }
+  #phone-tabs button.phone-tab-active { background: #ffc93e; color: #101820; }
+  #phone-msg-badge { color: #ff5a3c; font-weight: 900; }
+  #phone-body { flex: 1; overflow-y: auto; min-height: 280px; font-size: 13px; line-height: 1.5; }
+  .phone-contact { display: block; width: 100%; text-align: left; font-size: 14px; padding: 10px 12px; margin-bottom: 8px; background: rgba(255,255,255,0.08); color: #eef4f6; border-radius: 8px; }
+  .phone-call { background: rgba(255,201,62,0.12); border: 1px solid rgba(255,201,62,0.35); border-radius: 8px; padding: 10px 12px; margin-top: 4px; }
+  .phone-msg { background: rgba(127,212,255,0.1); border-radius: 8px; padding: 9px 11px; margin-bottom: 8px; }
+  .phone-viewfinder { background: #0a141c; border: 1px dashed rgba(255,255,255,0.35); border-radius: 8px; padding: 34px 12px; text-align: center; color: rgba(238,244,246,0.75); margin-bottom: 10px; }
+  .phone-shutter { width: 100%; padding: 12px; background: #ff5a3c; color: #fff; border-radius: 8px; }
+  .phone-gallery { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .phone-gallery img { width: 80px; height: 45px; object-fit: cover; border-radius: 4px; border: 1px solid rgba(255,255,255,0.3); }
+  #phone-foot { font-size: 11px; opacity: 0.65; margin-top: 10px; text-align: center; }
+  #phone-close { margin-top: 10px; width: 100%; padding: 9px; background: #dce6ea; color: #101820; border-radius: 8px; }
   .overlay { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(8, 14, 22, 0.72); z-index: 10; }
   .title { font-size: 64px; font-weight: 900; letter-spacing: 0.08em; color: #ffe9a8; text-shadow: 0 0 24px rgba(255, 190, 60, 0.55), 0 4px 0 rgba(0,0,0,0.4); }
   .subtitle { font-size: 22px; letter-spacing: 0.5em; color: #7fd4ff; margin-top: 2px; }
@@ -134,7 +151,7 @@
   </div>
   <div id="hud-bottom-right">
     <canvas id="hud-gauge" width="110" height="110"></canvas>
-    <div id="hud-weapons"><span class="wslot"></span><span class="wslot"></span><span class="wslot"></span><span class="wslot"></span></div>
+    <div id="hud-weapons"><span class="wslot"></span><span class="wslot"></span><span class="wslot"></span><span class="wslot"></span><span class="wslot"></span><span class="wslot"></span></div>
     <div id="hud-speed">0 <small>MPH</small></div>
     <div id="hud-vehicle">On foot</div>
     <div id="hud-ammo">PISTOL 12/12</div>
@@ -142,7 +159,7 @@
   <canvas id="hud-minimap" width="176" height="176"></canvas>
   <div id="hud-dialogue"><canvas id="dlg-portrait" width="72" height="72"></canvas><div><div id="dlg-name"></div><div id="dlg-text"></div></div></div>
   <div id="hud-popups"></div>
-  <div id="hud-hint">WASD move &nbsp;·&nbsp; E enter / leave vehicle &nbsp;·&nbsp; F or click shoot &nbsp;·&nbsp; R reload &nbsp;·&nbsp; 1-3 weapons &nbsp;·&nbsp; Shift sprint / nitro / climb &nbsp;·&nbsp; Space brake / descend &nbsp;·&nbsp; M map &nbsp;·&nbsp; V radio &nbsp;·&nbsp; N mute &nbsp;·&nbsp; Esc pause</div>
+  <div id="hud-hint">WASD move &nbsp;·&nbsp; E enter / leave vehicle &nbsp;·&nbsp; F or click shoot / swing &nbsp;·&nbsp; R reload &nbsp;·&nbsp; 1-6 weapons &nbsp;·&nbsp; P phone &nbsp;·&nbsp; Shift sprint / nitro / climb &nbsp;·&nbsp; Space brake / descend &nbsp;·&nbsp; M map &nbsp;·&nbsp; V radio &nbsp;·&nbsp; N mute &nbsp;·&nbsp; Esc pause</div>
   <div id="hud-banner" style="display:none"></div>
 </div>
 
@@ -167,9 +184,27 @@
     <button data-buy="respray">RESPRAY</button>
     <button data-buy="smg">SQUALL SMG</button>
     <button data-buy="shotgun">BREAKER 12</button>
+    <button data-buy="bat">BASEBALL BAT</button>
+    <button data-buy="rifle">LONGSHOT RIFLE</button>
     <button data-buy="safehouse">SAFEHOUSE</button>
+    <button data-buy="penthouse">PENTHOUSE</button>
+    <button data-buy="taxico">BAY CAB CO.</button>
   </div>
   <button id="garage-close" class="secondary">CLOSE (Esc)</button>
+</div>
+
+<div id="phone-overlay" class="panel">
+  <div id="phone">
+    <div id="phone-head"><span>SOLMAR OS</span><span id="phone-clock">FRI 17:24</span></div>
+    <div id="phone-tabs">
+      <button data-app="contacts" class="phone-tab-active">CONTACTS</button>
+      <button data-app="msgs">MESSAGES <span id="phone-msg-badge"></span></button>
+      <button data-app="camera">CAMERA</button>
+    </div>
+    <div id="phone-body"></div>
+    <button id="phone-close">CLOSE (P / Esc)</button>
+    <div id="phone-foot">The city keeps moving while you call.</div>
+  </div>
 </div>
 
 <div id="menu" class="overlay panel" style="display:none">

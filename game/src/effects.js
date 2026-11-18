@@ -70,6 +70,45 @@ export class MuzzleFlash {
   }
 }
 
+// A melee swing: a bright white arc that sweeps in front of Dario for
+// a fraction of a second when he punches or swings the bat. showAt()
+// puts it where the swing starts, facing the swing direction; update()
+// fades it out. It is a flat ring segment, so it reads as a slash from
+// any camera angle.
+export class MeleeArc {
+  constructor(scene) {
+    const geo = new THREE.RingGeometry(0.5, 1.5, 16, 1, -Math.PI / 3, (Math.PI * 2) / 3);
+    this.mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+      color: 0xffffff, transparent: true, opacity: 0, side: THREE.DoubleSide,
+      depthWrite: false,
+    }));
+    this.mesh.visible = false;
+    this.life = 0;
+    this.maxLife = 0.35;
+    scene.add(this.mesh);
+  }
+
+  showAt(x, y, z, heading) {
+    this.mesh.position.set(x, y, z);
+    this.mesh.rotation.set(-Math.PI / 2, 0, -heading + Math.PI / 2);
+    this.mesh.material.opacity = 0.9;
+    this.mesh.visible = true;
+    this.life = this.maxLife;
+  }
+
+  update(dt) {
+    if (this.life <= 0) return;
+    this.life -= dt;
+    if (this.life <= 0) {
+      this.mesh.visible = false;
+      this.mesh.material.opacity = 0;
+      return;
+    }
+    this.mesh.material.opacity = 0.9 * (this.life / this.maxLife);
+    this.mesh.scale.setScalar(1 + (this.maxLife - this.life) * 3);
+  }
+}
+
 export class DamageSmoke {
   constructor(scene) {
     this.scene = scene;

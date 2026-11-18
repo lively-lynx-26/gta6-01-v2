@@ -63,6 +63,8 @@ export const SHOTS = {
     cash: 460,
     stars: 0,
     rep: 120, // mission 1 done
+    weapon: 'rifle', // the Longshot Rifle, slot 6
+    rifle: true,
     mission: 'Mission 2 — Borrowed Wheels',
     objective: 'Clear the goons at the Plaza',
     waypoint: { x: 0, z: 0 }, // the Plaza, marked on the minimap

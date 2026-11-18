@@ -7,9 +7,10 @@
 // gets close, and drives off and despawns when the heat is gone. Its light
 // bar flashes red and blue, and its siren is loudest up close.
 
+import * as THREE from 'three';
 import { CFG } from './config.js';
 import { makeRng, range } from './random.js';
-import { buildPoliceCarMesh } from './models.js';
+import { buildPoliceCarMesh, buildCarMesh } from './models.js';
 import { stepCar, segmentBlocked, collideCircles } from './physics.js';
 import { STREETS } from './traffic.js';
 
@@ -41,6 +42,16 @@ export class Police {
     this.clearedStars = false;
     this.callsignIndex = 0; // hands out Unit numbers and bird names
     this.roadblock = null; // the parked cruiser blocking the road ahead
+    this.swat = null; // the SWAT van, chasing at four stars and up
+    this.onSpray = null; // set by the main loop: (fee) => {} on a Spray Bay clear
+    // The Spray Bay beacon: a cyan octahedron over the 96/48
+    // intersection, so the pay'n'spray is findable without the map.
+    this.sprayBeacon = new THREE.Mesh(
+      new THREE.OctahedronGeometry(1.1),
+      new THREE.MeshBasicMaterial({ color: 0x35e0ff, transparent: true, opacity: 0.9, fog: false }),
+    );
+    this.sprayBeacon.position.set(CFG.sprayBay.x, 2.5, CFG.sprayBay.z);
+    scene.add(this.sprayBeacon);
   }
 
   // The next callsign in rotation: "Unit 7 'Kestrel'".
@@ -60,7 +71,8 @@ export class Police {
       if (c.state !== 'chase' && c.state !== 'roadblock') continue;
       const d = Math.hypot(c.x - this.player.x, c.z - this.player.z);
       let status = 'PURSUING';
-      if (c.state === 'roadblock') status = 'ROADBLOCK';
+      if (c.isSwat) status = 'SWAT';
+      else if (c.state === 'roadblock') status = 'ROADBLOCK';
       else if (!this.player.onFoot && d < CFG.police.ramDistance && c.speed > 8) status = 'RAMMING';
       list.push({ callsign: c.callsign, distance: d, status });
     }
@@ -92,6 +104,12 @@ export class Police {
   addHeat(n) {
     this.heat = Math.min(5, this.heat + n);
     this.coolTimer = 0;
+  }
+
+  // True while the player is wanted and no cruiser can see them — the
+  // heat is cooling off. The HUD shows it as HIDDEN.
+  isHidden() {
+    return this.stars > 0 && !this._anyCruiserSees() && this.coolTimer > 0;
   }
 
   // Spawn one cruiser on a street about spawnDistance from the player.
@@ -139,6 +157,47 @@ export class Police {
     return cruiser;
   }
 
+  // The SWAT van: a heavy dark van with a light bar, chasing at four
+  // stars and up. It rams harder than a cruiser and counts as a chaser
+  // on top of the normal cruiser count.
+  _spawnSwat() {
+    const spec = CFG.police.swat;
+    const mesh = buildCarMesh('van', spec.color);
+    // A red/blue light bar on the roof, like the cruisers wear.
+    const redMat = new THREE.MeshStandardMaterial({ color: 0xcc1111, emissive: 0xff2222, emissiveIntensity: 0.6, roughness: 0.3 });
+    const blueMat = new THREE.MeshStandardMaterial({ color: 0x1133cc, emissive: 0x2244ff, emissiveIntensity: 0.6, roughness: 0.3 });
+    const redLamp = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.16, 0.28), redMat);
+    redLamp.position.set(-0.32, 1.92, -0.25);
+    const blueLamp = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.16, 0.28), blueMat);
+    blueLamp.position.set(0.32, 1.92, -0.25);
+    mesh.add(redLamp);
+    mesh.add(blueLamp);
+    mesh.userData.lightRed = redLamp;
+    mesh.userData.lightBlue = blueLamp;
+    this.scene.add(mesh);
+    const x = this.player.x + 60;
+    const z = this.player.z - 60;
+    const swat = {
+      spec,
+      mesh,
+      x,
+      z,
+      heading: Math.atan2(this.player.x - x, this.player.z - z),
+      speed: 0,
+      state: 'chase',
+      callsign: 'SWAT-1',
+      isSwat: true,
+      lightRed: redLamp,
+      lightBlue: blueLamp,
+      ramCooldown: 0,
+    };
+    this.cruisers.push(swat);
+    mesh.position.set(x, 0, z);
+    mesh.rotation.y = swat.heading;
+    this.swat = swat;
+    return swat;
+  }
+
   // Spawn a fixed number of cruisers in a pursuit wedge around the player
   // (for screenshot scenes): two behind, one cutting in ahead.
   spawnForShot(count) {
@@ -169,6 +228,7 @@ export class Police {
     for (const c of this.cruisers) this.scene.remove(c.mesh);
     this.cruisers.length = 0;
     this.roadblock = null;
+    this.swat = null;
     this.heat = 0;
     this.coolTimer = 0;
   }
@@ -249,12 +309,14 @@ export class Police {
     p.stars = this.stars;
 
     // --- Cruiser count follows the wanted level: spawn up to it, and send
-    // the farthest chaser away when it drops.
-    const chasers = this.cruisers.filter((c) => c.state === 'chase');
+    // the farthest chaser away when it drops. The SWAT van is counted
+    // separately — it is extra, on top of the cruisers.
+    const chasers = this.cruisers.filter((c) => c.state === 'chase' && !c.isSwat);
     if (wanted > chasers.length) {
       this._spawnCruiser();
     } else if (wanted === 0) {
       for (const c of this.cruisers) c.state = 'leave';
+      this.swat = null;
     } else if (chasers.length > wanted) {
       let farthest = chasers[0];
       let farD = -1;
@@ -266,6 +328,25 @@ export class Police {
         }
       }
       farthest.state = 'leave';
+    }
+
+    // --- SWAT: at four stars and up the van joins the chase; below four
+    // stars it drives off with the rest.
+    if (wanted >= 4 && !this.swat) this._spawnSwat();
+    else if (wanted < 4 && this.swat) {
+      this.swat.state = 'leave';
+      this.swat = null;
+    }
+
+    // --- Pay'n'Spray: drive into Spray Bay with heat on and the fee in
+    // pocket and every star comes off, respray-clean. A forced clear, so
+    // no escape award is paid for it.
+    const sb = CFG.sprayBay;
+    if (wanted > 0 && !p.onFoot && p.car && p.cash >= sb.price
+      && Math.hypot(p.x - sb.x, p.z - sb.z) < sb.radius) {
+      p.cash -= sb.price;
+      this.setStars(0);
+      if (this.onSpray) this.onSpray(sb.price);
     }
 
     // --- Roadblock: at three stars and up one cruiser parks across the
@@ -316,13 +397,15 @@ export class Police {
       if (impact > 18 && c.ramCooldown <= 0) {
         c.ramCooldown = 1.5;
       }
-      // Ram: close to the player's car, shove it and hurt it.
+      // Ram: close to the player's car, shove it and hurt it. A SWAT van
+      // hits harder than a cruiser.
       if (!p.onFoot && p.car) {
         const d = Math.hypot(c.x - p.x, c.z - p.z);
         if (d < CFG.police.ramDistance && c.speed > 8 && c.ramCooldown <= 0) {
           c.ramCooldown = 1.2;
           p.carSpeed *= 0.72;
-          p.carHealth = Math.max(0, (p.carHealth ?? 100) - CFG.police.ramDamage);
+          const ramDamage = c.isSwat ? CFG.police.swatRamDamage : CFG.police.ramDamage;
+          p.carHealth = Math.max(0, (p.carHealth ?? 100) - ramDamage);
           const pushX = (p.x - c.x) / (d || 1);
           const pushZ = (p.z - c.z) / (d || 1);
           p.x += pushX * 1.4;
@@ -346,5 +429,8 @@ export class Police {
         collideCircles(this.cruisers[i], this.cruisers[j], CFG.carRadius, CFG.carRadius);
       }
     }
+    // The Spray Bay beacon bobs over its intersection.
+    this.sprayBeacon.position.y = 2.5 + Math.sin(this.time * 2) * 0.3;
+    this.sprayBeacon.rotation.y += dt * 1.5;
   }
 }

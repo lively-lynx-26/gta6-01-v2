@@ -112,6 +112,46 @@ export class Enemies {
     return { enemy: best, damage: total, killed: best.state === 'dead' };
   }
 
+  // A melee swing: the nearest live goon inside `range` and within a
+  // 70-degree arc of the swing direction takes `damage` and is shoved
+  // back a step. Returns the goon hit and the damage dealt, or null.
+  meleeAt(ox, oz, dx, dz, damage, range = 2.6) {
+    let best = null;
+    let bestD = range;
+    for (const e of this.list) {
+      if (e.state !== 'alive') continue;
+      const ex = e.x - ox;
+      const ez = e.z - oz;
+      const d = Math.hypot(ex, ez);
+      if (d > bestD) continue;
+      const along = d === 0 ? 1 : (ex * dx + ez * dz) / d;
+      if (along < 0.34) continue; // outside the swing arc
+      bestD = d;
+      best = e;
+    }
+    if (!best) return null;
+    best.health -= damage;
+    // Shove the goon back, out of the swing.
+    const push = 1.5;
+    const fixed = resolveCircle(this.city.colliders, best.x + dx * push, best.z + dz * push, 0.5);
+    best.x = fixed.x;
+    best.z = fixed.z;
+    best.mesh.position.set(best.x, 0, best.z);
+    if (best.health <= 0) {
+      best.state = 'dead';
+      best.deadTimer = 4;
+      const u = best.mesh.userData;
+      u.legL.rotation.x = 0;
+      u.legR.rotation.x = 0;
+      u.armL.rotation.x = 0;
+      u.armR.rotation.x = 0;
+      u.torso.rotation.x = 0;
+      best.mesh.rotation.x = -Math.PI / 2;
+      best.mesh.position.y = 0.35;
+    }
+    return { enemy: best, damage, killed: best.state === 'dead' };
+  }
+
   // A short-lived tracer line from the shooter toward the player.
   _tracer(fromX, fromY, fromZ, toX, toY, toZ) {
     const geo = new THREE.BufferGeometry().setFromPoints([

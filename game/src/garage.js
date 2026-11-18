@@ -21,11 +21,12 @@ function recolorCar(car, color) {
 }
 
 export class Garage {
-  constructor(overlayEl, player, police, audio) {
+  constructor(overlayEl, player, police, audio, properties = null) {
     this.overlay = overlayEl;
     this.player = player;
     this.police = police;
     this.audio = audio;
+    this.properties = properties; // the penthouse and the taxi company
     this.msgEl = overlayEl.querySelector('#garage-msg');
     this.openFlag = false;
     this.paintIndex = 0;
@@ -78,7 +79,14 @@ export class Garage {
     set('respray', `RESPRAY — $${CFG.garage.resprayPrice} (clears wanted)`, false);
     set('smg', p.weapons.smg ? 'SQUALL SMG — OWNED' : `SQUALL SMG — $${CFG.smg.price}`, p.weapons.smg);
     set('shotgun', p.weapons.shotgun ? 'BREAKER 12 — OWNED' : `BREAKER 12 — $${CFG.shotgun.price}`, p.weapons.shotgun);
+    set('bat', p.weapons.bat ? 'BASEBALL BAT — OWNED' : `BASEBALL BAT — $${CFG.bat.price}`, p.weapons.bat);
+    set('rifle', p.weapons.rifle ? 'LONGSHOT RIFLE — OWNED' : `LONGSHOT RIFLE — $${CFG.rifle.price}`, p.weapons.rifle);
     set('safehouse', p.safehouse ? 'SAFEHOUSE — OWNED' : `SAFEHOUSE — $${CFG.garage.safehousePrice}`, p.safehouse);
+    const props = this.properties;
+    set('penthouse', !props ? 'PENTHOUSE — —' : props.penthouse ? 'PENTHOUSE — OWNED'
+      : `PENTHOUSE — $${CFG.properties.penthouse.price} (heals + armour)`, !props || props.penthouse);
+    set('taxico', !props ? 'BAY CAB CO. — —' : props.taxico ? 'BAY CAB CO. — OWNED'
+      : `BAY CAB CO. — $${CFG.properties.taxico.price} (pays $${CFG.properties.taxico.payAmount} / ${CFG.properties.taxico.payEvery}s)`, !props || props.taxico);
     this._say(`Cash $${p.cash.toLocaleString('en-US')} — Rosa's Garage, Dario.`);
   }
 
@@ -112,18 +120,39 @@ export class Garage {
       if (!this._spend(CFG.smg.price)) return;
       p.weapons.smg = true;
       p.ammoSmg = CFG.smg.magazine;
-      this._say('Squall SMG — slot 2. Keep it clean.');
+      this._say('Squall SMG — slot 4. Keep it clean.');
     } else if (kind === 'shotgun') {
       if (p.weapons.shotgun) return;
       if (!this._spend(CFG.shotgun.price)) return;
       p.weapons.shotgun = true;
       p.ammoShotgun = CFG.shotgun.magazine;
-      this._say('Breaker 12 — slot 3. Close range only.');
+      this._say('Breaker 12 — slot 5. Close range only.');
+    } else if (kind === 'bat') {
+      if (p.weapons.bat) return;
+      if (!this._spend(CFG.bat.price)) return;
+      p.weapons.bat = true;
+      this._say('Baseball bat — slot 2. Quiet work.');
+    } else if (kind === 'rifle') {
+      if (p.weapons.rifle) return;
+      if (!this._spend(CFG.rifle.price)) return;
+      p.weapons.rifle = true;
+      p.ammoRifle = CFG.rifle.magazine;
+      this._say('Longshot Rifle — slot 6. Two hits drop a goon.');
     } else if (kind === 'safehouse') {
       if (p.safehouse) return;
       if (!this._spend(CFG.garage.safehousePrice)) return;
       p.safehouse = true;
       this._say('Safehouse yours — visit it to heal and save.');
+    } else if (kind === 'penthouse') {
+      if (!this.properties || this.properties.penthouse) return;
+      if (!this._spend(CFG.properties.penthouse.price)) return;
+      this.properties.buyPenthouse();
+      this._say('Harbor Heights penthouse yours — visit it to heal and refill armour.');
+    } else if (kind === 'taxico') {
+      if (!this.properties || this.properties.taxico) return;
+      if (!this._spend(CFG.properties.taxico.price)) return;
+      this.properties.buyTaxico();
+      this._say(`Bay Cab Co. yours — $${CFG.properties.taxico.payAmount} every ${CFG.properties.taxico.payEvery}s, hands free.`);
     }
     if (this.audio) this.audio.chime();
     this.refresh();

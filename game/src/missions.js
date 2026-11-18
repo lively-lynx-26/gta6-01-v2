@@ -194,6 +194,7 @@ export class Missions {
     this.player.ammo = CFG.pistol.magazine;
     if (this.player.weapons.smg) this.player.ammoSmg = CFG.smg.magazine;
     if (this.player.weapons.shotgun) this.player.ammoShotgun = CFG.shotgun.magazine;
+    if (this.player.weapons.rifle) this.player.ammoRifle = CFG.rifle.magazine;
     this.player.carHealth = 100;
 
     // Rosa briefs every job in the dialogue box.
@@ -448,14 +449,14 @@ export class Missions {
       this.player.weapons.smg = true;
       this.player.ammoSmg = CFG.smg.magazine;
       if (this.onLine) {
-        this.onLine('Rosa — Rosa\'s Garage', 'Nice work. Take the Squall SMG from the locker — slot 2. You\'ll need it.', 'rosa');
+        this.onLine('Rosa — Rosa\'s Garage', 'Nice work. Take the Squall SMG from the locker — slot 4. You\'ll need it.', 'rosa');
       }
     }
     if (this.index === 3 && !this.player.weapons.shotgun) {
       this.player.weapons.shotgun = true;
       this.player.ammoShotgun = CFG.shotgun.magazine;
       if (this.onLine) {
-        this.onLine('Rosa — Rosa\'s Garage', "Breaker 12 is yours now — slot 3. Vince won't stop at the Docks.", 'rosa');
+        this.onLine('Rosa — Rosa\'s Garage', "Breaker 12 is yours now — slot 5. Vince won't stop at the Docks.", 'rosa');
       }
     }
     this.index += 1;
@@ -496,6 +497,7 @@ export class Missions {
     this.player.ammo = CFG.pistol.magazine;
     if (this.player.weapons.smg) this.player.ammoSmg = CFG.smg.magazine;
     if (this.player.weapons.shotgun) this.player.ammoShotgun = CFG.shotgun.magazine;
+    if (this.player.weapons.rifle) this.player.ammoRifle = CFG.rifle.magazine;
     this.player.carHealth = 100;
     this.player.spawn(this.spawnPoint.x, this.spawnPoint.z, this.spawnPoint.heading);
   }

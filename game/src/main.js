@@ -18,7 +18,7 @@ import { Police } from './police.js';
 import { Enemies } from './enemies.js';
 import { Missions } from './missions.js';
 import { Minimap } from './minimap.js';
-import { DamageSmoke, MuzzleFlash } from './effects.js';
+import { DamageSmoke, MuzzleFlash, MeleeArc } from './effects.js';
 import { Helicopter } from './helicopter.js';
 import { Radio } from './radio.js';
 import { Dialogue } from './dialogue.js';
@@ -27,6 +27,8 @@ import { Garage } from './garage.js';
 import { SideActivities } from './side.js';
 import { CityMap } from './map.js';
 import { Popups } from './popups.js';
+import { Phone } from './phone.js';
+import { Properties } from './properties.js';
 import { repTier, repProgress } from './rep.js';
 import { districtAt } from './districts.js';
 import { Vehicles } from './vehicles.js';
@@ -148,11 +150,14 @@ const helicopter = new Helicopter(scene);
 const radio = new Radio();
 const dialogue = new Dialogue(el('hud-dialogue'));
 const response = new ResponsePanel(el('hud-response-list'));
-const garage = new Garage(el('garage-overlay'), player, police, audio);
+const properties = new Properties(scene, player);
+const garage = new Garage(el('garage-overlay'), player, police, audio, properties);
 const side = new SideActivities(scene, city, player);
 const cityMap = new CityMap(el('map-overlay'));
 const popups = new Popups(el('hud-popups'));
 const muzzle = new MuzzleFlash(scene);
+const meleeArc = new MeleeArc(scene);
+const phone = new Phone(el('phone-overlay'), { player, missions, dialogue });
 // Boats, the flyable helicopter and the helipad; the day/night cycle
 // and the weather. The player learns about the vehicles here.
 const vehicles = new Vehicles(scene, city, player);
@@ -189,6 +194,13 @@ side.onRep = (amount, label) => {
   player.rep += amount;
 };
 side.onPopup = (x, y, z, text, cls) => popups.spawn(x, y, z, text, cls);
+properties.onIncome = () => audio.pickup();
+properties.onPopup = (x, y, z, text, cls) => popups.spawn(x, y, z, text, cls);
+player.onJumpLanded = (air, dist) => side.recordJump(air, dist);
+police.onSpray = (fee) => {
+  popups.spawn(player.x, 2.6, player.z, `SPRAY BAY — HEAT CLEARED -$${fee}`, 'rep');
+  audio.chime();
+};
 
 // Golden hour: the sunset palette for the chase screenshot — warm sky,
 // low sun, long light. The day palette stays the default everywhere else.
@@ -224,6 +236,9 @@ const world = {
     } else if (weapon === 'shotgun') {
       hit = enemies.shootAt(x, z, dx, dz, CFG.shotgun.damage, CFG.shotgun.range, CFG.shotgun.pellets);
       heat = CFG.shotgun.heatPerShot;
+    } else if (weapon === 'rifle') {
+      hit = enemies.shootAt(x, z, dx, dz, CFG.rifle.damage, CFG.rifle.range, 1);
+      heat = CFG.rifle.heatPerShot;
     } else {
       hit = enemies.shootAt(x, z, dx, dz);
     }
@@ -243,6 +258,19 @@ const world = {
   carStolen() {
     police.addHeat(1);
     player.carsStolen += 1;
+  },
+  // A melee swing: the arc flashes in front of Dario, the nearest goon
+  // in the arc takes the hit. Quiet work — no heat for a punch.
+  melee(x, z, dx, dz, weapon, damage, range) {
+    const hit = enemies.meleeAt(x, z, dx, dz, damage, range);
+    meleeArc.showAt(x + dx * 1.4, 1.2, z + dz * 1.4, Math.atan2(dx, dz));
+    if (hit) {
+      popups.spawn(hit.enemy.x, 1.9, hit.enemy.z, `-${hit.damage}`, 'dmg', camera);
+      if (hit.killed) {
+        player.rep += CFG.repTakedown;
+        popups.spawn(hit.enemy.x, 2.5, hit.enemy.z, `TAKEDOWN +${CFG.repTakedown} REP`, 'rep', camera);
+      }
+    }
   },
   carCrashed(strength) {
     audio.crash(strength);
@@ -348,7 +376,8 @@ function updateHud() {
     bannerEl.style.display = 'none';
   }
   el('hud-cash').textContent = `$${player.cash.toLocaleString('en-US')}`;
-  el('hud-stars').textContent = '★'.repeat(player.stars) + '☆'.repeat(5 - player.stars);
+  el('hud-stars').textContent = '★'.repeat(player.stars) + '☆'.repeat(5 - player.stars)
+    + (police.isHidden() ? ' · HIDDEN' : '');
   el('hud-clock').textContent = formatClock(gameMinutes);
   el('hud-weather').textContent = weather.label();
   el('hud-radio').textContent = `♪ ${radio.label()}`;
@@ -356,13 +385,15 @@ function updateHud() {
   const tier = repTier(player.rep);
   el('hud-rep').textContent = `REP ${player.rep.toLocaleString('en-US')} · ${tier.name}`;
   el('hud-rep-fill').style.width = `${Math.round(repProgress(player.rep) * 100)}%`;
-  // Weapon slots 1-4: the current weapon is lit, locked ones are dim.
+  // Weapon slots 1-6: the current weapon is lit, locked ones are dim.
   const slots = el('hud-weapons').children;
   const slotInfo = [
-    { label: '1 PISTOL', active: player.weapon === 'pistol', locked: false },
-    { label: '2 SMG', active: player.weapon === 'smg', locked: !player.weapons.smg },
-    { label: '3 SHOTGUN', active: player.weapon === 'shotgun', locked: !player.weapons.shotgun },
-    { label: '4 —', active: false, locked: true },
+    { label: '1 FISTS', active: player.weapon === 'fists', locked: false },
+    { label: '2 BAT', active: player.weapon === 'bat', locked: !player.weapons.bat },
+    { label: '3 PISTOL', active: player.weapon === 'pistol', locked: false },
+    { label: '4 SMG', active: player.weapon === 'smg', locked: !player.weapons.smg },
+    { label: '5 SHOTGUN', active: player.weapon === 'shotgun', locked: !player.weapons.shotgun },
+    { label: '6 RIFLE', active: player.weapon === 'rifle', locked: !player.weapons.rifle },
   ];
   for (let i = 0; i < slots.length; i++) {
     slots[i].textContent = slotInfo[i].label;
@@ -374,7 +405,8 @@ function updateHud() {
   el('hud-car-fill').style.width = player.onFoot ? '0%' : `${Math.max(0, (player.carHealth / player.carHealthMax) * 100)}%`;
   el('hud-speed').innerHTML = `${player.speedMph()} <small>MPH</small>`;
   el('hud-vehicle').textContent = player.vehicleName() + (player.nitro && !player.onFoot ? ' · NITRO' : '');
-  el('hud-ammo').textContent = player.reloading ? 'RELOADING' : `${player.weaponName()} ${player.weaponAmmo()}/${player.weaponMagazine()}`;
+  el('hud-ammo').textContent = player.reloading ? 'RELOADING'
+    : (player.weaponAmmo() === null ? player.weaponName() : `${player.weaponName()} ${player.weaponAmmo()}/${player.weaponMagazine()}`);
   el('hud-side').textContent = side.fareLabel || side.raceLabel || (side.shellsFound > 0 ? `Golden shells ${side.shellsFound}/${CFG.shells}` : '');
   drawGauge();
   // The response panel lists the chasing units by callsign.
@@ -387,6 +419,7 @@ function updateHud() {
     traffic,
     police,
     vehicles,
+    properties,
     waypoint: missions.waypoint,
     time: skyTime,
   });
@@ -426,9 +459,10 @@ function newGame() {
   player.carHealth = 100;
   player.rep = 0;
   player.weapon = 'pistol';
-  player.weapons = { smg: false, shotgun: false };
+  player.weapons = { smg: false, shotgun: false, bat: false, rifle: false };
   player.ammoSmg = 0;
   player.ammoShotgun = 0;
+  player.ammoRifle = 0;
   player.engineLevel = 0;
   player.armorLevel = 0;
   player.nitro = false;
@@ -441,6 +475,8 @@ function newGame() {
   currentDistrict = null;
   districtTimer = 0;
   side.reset();
+  properties.reset();
+  phone.photos.length = 0;
   helicopter.update(0, player, false);
   dialogue.hide();
   popups.clear();
@@ -465,6 +501,8 @@ function continueGame() {
   }
   player.restore(data);
   side.restoreShells(data.shellsFound ?? 0);
+  side.bestJump = data.bestJump ?? { air: 0, dist: 0 };
+  properties.restore(data.properties);
   lastStars = 0;
   gameMinutes = CFG.clock.startMinutes;
   currentDistrict = null;
@@ -493,7 +531,12 @@ function resumeGame() {
 }
 
 function quitToMenu() {
-  saveGame({ ...player.snapshot(), shellsFound: side.shellsFound });
+  saveGame({
+    ...player.snapshot(),
+    shellsFound: side.shellsFound,
+    properties: properties.snapshot(),
+    bestJump: side.bestJump,
+  });
   missions.suspend();
   showMenu();
 }
@@ -570,9 +613,10 @@ function applyShot() {
   player.ammo = CFG.pistol.magazine;
   player.carHealth = 100;
   player.carHealthMax = 100;
-  player.weapons = { smg: !!shot.smg, shotgun: !!shot.shotgun };
+  player.weapons = { smg: !!shot.smg, shotgun: !!shot.shotgun, bat: false, rifle: !!shot.rifle };
   player.ammoSmg = player.weapons.smg ? CFG.smg.magazine : 0;
   player.ammoShotgun = player.weapons.shotgun ? CFG.shotgun.magazine : 0;
+  player.ammoRifle = player.weapons.rifle ? CFG.rifle.magazine : 0;
   player.weapon = shot.weapon || 'pistol';
   gameMinutes = CFG.clock.startMinutes + (shot.clockMinutes ?? 0);
   shotTitle = shot.mission;
@@ -647,8 +691,9 @@ function applyShot() {
     side.restoreShells(3);
     player.carsStolen = 5;
     player.copsLost = 2;
+    properties.buyPenthouse();
     cityMap.draw({
-      player, traffic, police, missions, side, vehicles,
+      player, traffic, police, missions, side, vehicles, properties,
       carsStolen: player.carsStolen, copsLost: player.copsLost,
       safehouse: false, time: skyTime,
     });
@@ -686,7 +731,7 @@ function applyShot() {
     if (shotName === 'foot' && i === shot.steps - 1) {
       const dx = Math.sin(shot.heading);
       const dz = Math.cos(shot.heading);
-      world.fireShot(player.x, player.z, dx, dz, 'pistol');
+      world.fireShot(player.x, player.z, dx, dz, shot.weapon || 'pistol');
     }
     // The chase shot carries a drift popup, like the top entries do.
     if (shotName === 'chase' && i === shot.steps - 1) {
@@ -729,11 +774,19 @@ function loop() {
     // N mutes; M opens the full city map; V switches the radio station.
     if (input.consume('KeyN')) audio.setMuted(!audio.muted);
     if (input.consume('KeyV')) radio.next();
-    if (input.consume('KeyM')) {
+    // P opens the phone over the live game (the world keeps moving);
+    // P or Escape closes it. While the phone is open Dario stands
+    // still, so a tap on the phone never fires a shot or opens a shop.
+    if (phone.isOpen) {
+      if (input.consume('KeyP') || input.consume('Escape')) phone.close();
+    } else if (input.consume('KeyP')) {
+      phone.open();
+    }
+    if (input.consume('KeyM') && !phone.isOpen) {
       state = 'map';
       cityMap.open();
       cityMap.draw({
-        player, traffic, police, missions, side, vehicles,
+        player, traffic, police, missions, side, vehicles, properties,
         carsStolen: player.carsStolen, copsLost: player.copsLost,
         safehouse: player.safehouse, time: skyTime,
       });
@@ -741,16 +794,18 @@ function loop() {
     // E near Rosa's Garage opens the shop instead of entering a car.
     const nearGarage = player.onFoot
       && Math.hypot(player.x - CFG.garage.position.x, player.z - CFG.garage.position.z) < 7;
-    if (nearGarage && input.consume('KeyE')) {
+    if (nearGarage && !phone.isOpen && input.consume('KeyE')) {
       state = 'garage';
       garage.open();
     }
     const wasOnFoot = player.onFoot;
-    player.update(dt, input, cameraYaw, world);
+    if (!phone.isOpen) player.update(dt, input, cameraYaw, world);
     if (player.onFoot !== wasOnFoot) audio.door();
     vehicles.update(dt);
     damageSmoke.update(dt, player.car, player.carHealth);
     muzzle.update(dt);
+    meleeArc.update(dt);
+    properties.update(dt);
     missions.update(dt);
     const playerCar = player.onFoot
       ? null
@@ -777,7 +832,8 @@ function loop() {
     radio.update(dt, audio);
     dialogue.update(dt);
     popups.update(dt, camera);
-    if (dialogue.visible && (input.consume('KeyF') || input.consumeClick())) dialogue.skip();
+    phone.updateClock(formatClock(gameMinutes));
+    if (dialogue.visible && !phone.isOpen && (input.consume('KeyF') || input.consumeClick())) dialogue.skip();
     // Near misses and drifts pay REP: a fast pass within a few metres of
     // a traffic car, or a handbrake slide held for a second.
     nearMissCooldown = Math.max(0, nearMissCooldown - dt);
@@ -824,10 +880,32 @@ function loop() {
       player.health = Math.min(100, player.health + 20 * dt);
       if (!safehouseSaved) {
         safehouseSaved = true;
-        saveGame({ ...player.snapshot(), shellsFound: side.shellsFound });
+        saveGame({
+          ...player.snapshot(),
+          shellsFound: side.shellsFound,
+          properties: properties.snapshot(),
+          bestJump: side.bestJump,
+        });
       }
     } else {
       safehouseSaved = false;
+    }
+    // The penthouse heals Dario and refills his armour, and saves the
+    // game, once per visit — the safehouse upgrade in action.
+    if (properties.penthouse && properties.nearPenthouse()) {
+      player.health = Math.min(100, player.health + 20 * dt);
+      player.armor = Math.min(CFG.properties.penthouse.armorRefill, player.armor + 10 * dt);
+      if (!properties.penthouseSaved) {
+        properties.penthouseSaved = true;
+        saveGame({
+          ...player.snapshot(),
+          shellsFound: side.shellsFound,
+          properties: properties.snapshot(),
+          bestJump: side.bestJump,
+        });
+      }
+    } else {
+      properties.penthouseSaved = false;
     }
     // The driven speed, whatever the vehicle: car, bike, boat or heli.
     const drivenSpeed = player.flying && player.heli
@@ -881,6 +959,12 @@ function loop() {
   }
   input.endFrame();
   renderer.render(scene, camera);
+  // A phone photo is taken from the frame just rendered, so the picture
+  // is the live view, not the phone UI above it.
+  if (phone.captureRequested) {
+    phone.captureRequested = false;
+    phone.addPhoto(renderer.domElement.toDataURL('image/jpeg', 0.6));
+  }
 }
 
 // --- Boot ------------------------------------------------------------------------
@@ -890,7 +974,7 @@ function loop() {
 window.__game = {
   player, city, input, traffic, pedestrians, police, enemies, audio, missions, damageSmoke,
   helicopter, radio, dialogue, response, garage, side, cityMap, popups, muzzle,
-  vehicles, weather,
+  vehicles, weather, phone, properties, meleeArc,
   setGameMinutes(m) {
     gameMinutes = m;
   },

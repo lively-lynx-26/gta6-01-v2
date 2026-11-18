@@ -58,6 +58,8 @@ export const CFG = {
   // at a time.
   police: {
     cruiser: { name: 'Police Cruiser', accel: 14, maxSpeed: 48, reverseSpeed: 10, turn: 2.1, grip: 9, color: 0xf2f2f2, body: 'police' },
+    swat: { name: 'SWAT Van', accel: 11, maxSpeed: 44, reverseSpeed: 9, turn: 1.8, grip: 9, color: 0x1c2733, body: 'van' },
+    swatRamDamage: 12, // a SWAT van hits harder than a cruiser
     maxCruisers: 5,
     spawnDistance: 70, // cruisers arrive this far from the player
     despawnDistance: 135, // a leaving cruiser is removed past this distance
@@ -66,10 +68,37 @@ export const CFG = {
     coolRange: 50, // no cruiser with line of sight inside this range: cooling
     coolTime: [6, 9, 12, 15, 18], // seconds to shed one star, per star level
   },
+  // Pay'n'Spray: drive into Spray Bay with heat on and $200 clears every
+  // star. The bay sits at the 96/48 intersection, on the map as 'S'.
+  sprayBay: { x: 96, z: 48, radius: 8, price: 200 },
 
-  // Combat. Three weapons in slots 1-3 (slot 4 stays empty): the pistol
-  // Dario starts with, the Squall SMG unlocked after mission 2, and the
-  // Breaker 12 shotgun unlocked after mission 4.
+  // Combat. Six weapons in slots 1-6: fists and the bat are melee, the
+  // pistol Dario starts with, the Squall SMG unlocked after mission 2,
+  // the Breaker 12 shotgun unlocked after mission 4, and the Longshot
+  // rifle from the gun shop.
+  fists: {
+    name: 'FISTS',
+    damage: 25, // a punch; every third hit in a combo lands harder
+    comboDamage: 40,
+    range: 2.4,
+    swingSeconds: 0.45,
+  },
+  bat: {
+    name: 'BAT',
+    damage: 45,
+    range: 2.6,
+    swingSeconds: 0.6,
+    price: 250,
+  },
+  rifle: {
+    name: 'Longshot Rifle',
+    magazine: 8,
+    damage: 70, // two hits drop a mission goon
+    range: 95,
+    reloadSeconds: 2.0,
+    heatPerShot: 1 / 2,
+    price: 1800,
+  },
   pistol: {
     magazine: 12,
     damage: 34, // three hits drop a mission goon
@@ -119,6 +148,7 @@ export const CFG = {
   repForMission: [120, 340, 500, 450, 550, 800, 1000], // per mission index
   repNearMiss: 25,
   repDrift: 15,
+  repJump: 25, // a stunt jump, or stopping a mugging
   repTakedown: 100,
   repEscape: 150, // losing every star while wanted
   repFare: 20,
@@ -183,8 +213,31 @@ export const CFG = {
     durations: { clear: [180, 360], cloudy: [120, 240], rain: [90, 180], storm: [60, 120] },
   },
 
-  // Side activities: taxi fares in the Bay Cab, one street race, and
-  // twelve golden shells hidden on the beach.
+  // Properties: a penthouse upgrade in Harbor Heights that refills
+  // health and armour on visit, and a stake in the Bay Cab Co. that pays
+  // passive income every 45 real seconds.
+  properties: {
+    penthouse: { x: 144, z: -96, radius: 8, price: 4000, armorRefill: 50 },
+    taxico: { x: -144, z: 96, radius: 8, price: 2500, payEvery: 45, payAmount: 120 },
+  },
+
+  // Stunt jumps: three ramps around the city. Cross one fast in a car or
+  // on a bike and the jump is scored on airtime and distance.
+  jumps: [
+    { x: -96, z: 0, heading: Math.PI / 2, minSpeed: 16 }, // east, over the plaza approach
+    { x: 48, z: 144, heading: 0, minSpeed: 16 }, // south, toward the Docks
+    { x: -144, z: -48, heading: Math.PI, minSpeed: 16 }, // north, up Old Town
+  ],
+  jumpPayPerMetre: 6, // dollars per metre jumped, capped
+  jumpPayCap: 400,
+  // Random events on the street: a mugging to interrupt and a hitchhiker
+  // to drive. They spawn after the first job, one at a time.
+  events: {
+    firstAfter: 30, // seconds into free roam before the first event
+    gap: [60, 120], // seconds between events
+    muggingReward: 40,
+    hitchReward: 60,
+  },
   farePay: 120,
   racePay: 300,
   raceStart: { x: 144, z: -24 }, // Boulevard Sprint starts at the Marina

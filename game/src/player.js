@@ -193,6 +193,13 @@ export class Player {
     this.carHeading = carState.heading;
     this.carSpeed = carState.speed;
     this.heading = this.carHeading;
+    // Keep the car record in step with the car itself: exitCar, nearestCar
+    // and the mission waypoints all read car.x / car.z / car.heading, so a
+    // stale record would drop the player (or the waypoint) back where the
+    // car was entered instead of where it is now.
+    this.car.x = this.x;
+    this.car.z = this.z;
+    this.car.heading = this.carHeading;
 
     // A hard hit hurts the car and makes a sound.
     if (impact > 15) {

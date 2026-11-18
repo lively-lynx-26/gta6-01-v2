@@ -16,6 +16,7 @@ import { Traffic } from './traffic.js';
 import { Pedestrians } from './pedestrians.js';
 import { Police } from './police.js';
 import { Enemies } from './enemies.js';
+import { Missions } from './missions.js';
 
 const params = new URLSearchParams(window.location.search);
 const shotName = params.get('shot');
@@ -125,6 +126,7 @@ const traffic = new Traffic(scene, city);
 const pedestrians = new Pedestrians(scene, city);
 const police = new Police(scene, city, player);
 const enemies = new Enemies(scene, city);
+const missions = new Missions(scene, city, player, police, enemies);
 const audio = new AudioEngine();
 
 // The world the player acts on: a gunshot is heard, makes pedestrians flee
@@ -169,8 +171,10 @@ let state = 'menu'; // menu | playing | paused | shot
 let cameraYaw = Math.PI;
 let cameraPitch = -0.3;
 let cameraDistance = 8;
-let missionTitle = 'Free roam';
-let missionObjective = 'Explore Solmar Bay';
+// Screenshot scenes carry their own HUD text; live play reads it from the
+// missions (title, objective, banner), so these two only serve shot mode.
+let shotTitle = 'Free roam';
+let shotObjective = 'Explore Solmar Bay';
 let skyTime = 0;
 
 function showHud() {
@@ -188,8 +192,21 @@ function showMenu() {
 }
 
 function updateHud() {
-  el('hud-mission').textContent = missionTitle;
-  el('hud-objective').textContent = missionObjective;
+  if (state === 'shot') {
+    el('hud-mission').textContent = shotTitle;
+    el('hud-objective').textContent = shotObjective;
+  } else {
+    el('hud-mission').textContent = missions.title;
+    const dist = missions.waypointDistance;
+    el('hud-objective').textContent = missions.objective + (dist !== null ? ` — ${Math.round(dist)}m` : '');
+  }
+  const bannerEl = el('hud-banner');
+  if (state !== 'shot' && missions.bannerText) {
+    bannerEl.textContent = missions.bannerText;
+    bannerEl.style.display = 'block';
+  } else {
+    bannerEl.style.display = 'none';
+  }
   el('hud-cash').textContent = `$${player.cash.toLocaleString('en-US')}`;
   el('hud-stars').textContent = '★'.repeat(player.stars) + '☆'.repeat(5 - player.stars);
   el('hud-health-fill').style.width = `${Math.max(0, player.health)}%`;
@@ -209,8 +226,7 @@ function newGame() {
   police.clearCruisers();
   police.setStars(0);
   enemies.clear();
-  missionTitle = 'Free roam';
-  missionObjective = 'Explore Solmar Bay';
+  missions.reset();
   player.spawn(0, -60, 0);
   cameraYaw = player.heading + Math.PI;
   cameraPitch = -0.3;
@@ -230,8 +246,7 @@ function continueGame() {
   police.clearCruisers();
   police.setStars(data.stars ?? 0);
   enemies.clear();
-  missionTitle = data.mission > 0 ? `Mission ${data.mission + 1}` : 'Free roam';
-  missionObjective = 'Explore Solmar Bay';
+  missions.restore(data.mission ?? 0);
   cameraYaw = player.heading + Math.PI;
   cameraPitch = -0.3;
   state = 'playing';
@@ -251,6 +266,7 @@ function resumeGame() {
 
 function quitToMenu() {
   saveGame(player.snapshot());
+  missions.suspend();
   showMenu();
 }
 
@@ -310,8 +326,8 @@ function applyShot() {
   player.health = 100;
   player.ammo = CFG.pistol.magazine;
   player.carHealth = 100;
-  missionTitle = shot.mission;
-  missionObjective = shot.objective;
+  shotTitle = shot.mission;
+  shotObjective = shot.objective;
   cameraYaw = shot.heading + Math.PI;
   cameraPitch = shot.cameraPitch;
   cameraDistance = shot.cameraDistance;
@@ -353,6 +369,9 @@ function applyShot() {
       if (player.carSpeed > spec.maxSpeed) player.carSpeed = spec.maxSpeed;
       player.x += Math.sin(player.carHeading) * player.carSpeed * fixedDt;
       player.z += Math.cos(player.carHeading) * player.carSpeed * fixedDt;
+      player.car.x = player.x;
+      player.car.z = player.z;
+      player.car.heading = player.carHeading;
       player.car.mesh.position.set(player.x, 0, player.z);
       player.car.mesh.rotation.y = player.carHeading;
     }
@@ -387,6 +406,7 @@ function loop() {
     animateWater(city.water, skyTime);
     if (input.consume('KeyM')) audio.setMuted(!audio.muted);
     player.update(dt, input, cameraYaw, world);
+    missions.update(dt);
     const playerCar = player.onFoot
       ? null
       : { x: player.x, z: player.z, heading: player.carHeading, speed: player.carSpeed };
@@ -430,7 +450,7 @@ function loop() {
 // runs: the harness screenshots the frozen frame. In live mode the loop runs.
 // Debug hook for automated verification (harmless in the shipped game).
 window.__game = {
-  player, city, input, traffic, pedestrians, police, enemies, audio,
+  player, city, input, traffic, pedestrians, police, enemies, audio, missions,
   get cameraYaw() {
     return cameraYaw;
   },

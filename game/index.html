@@ -29,6 +29,7 @@
   #hud-vehicle { font-size: 15px; font-weight: 600; margin-top: 2px; text-shadow: 0 1px 4px rgba(0,0,0,0.7); }
   #hud-ammo { font-size: 13px; opacity: 0.9; margin-top: 2px; text-shadow: 0 1px 4px rgba(0,0,0,0.7); }
   #hud-hint { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); font-size: 12px; opacity: 0.75; text-shadow: 0 1px 4px rgba(0,0,0,0.8); }
+  #hud-banner { position: absolute; top: 26%; left: 0; right: 0; text-align: center; font-size: 32px; font-weight: 900; letter-spacing: 0.08em; color: #ffe9a8; text-shadow: 0 0 18px rgba(255,190,60,0.6), 0 3px 0 rgba(0,0,0,0.5); }
   /* Menus */
   .overlay { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(8, 14, 22, 0.72); z-index: 10; }
   .title { font-size: 64px; font-weight: 900; letter-spacing: 0.08em; color: #ffe9a8; text-shadow: 0 0 24px rgba(255, 190, 60, 0.55), 0 4px 0 rgba(0,0,0,0.4); }
@@ -67,6 +68,7 @@
     <div id="hud-ammo">PISTOL 12/12</div>
   </div>
   <div id="hud-hint">WASD move &nbsp;·&nbsp; E enter / leave car &nbsp;·&nbsp; F or click shoot &nbsp;·&nbsp; R reload &nbsp;·&nbsp; Space brake &nbsp;·&nbsp; M mute &nbsp;·&nbsp; drag mouse to look &nbsp;·&nbsp; Esc pause</div>
+  <div id="hud-banner" style="display:none"></div>
 </div>
 
 <div id="menu" class="overlay panel" style="display:none">

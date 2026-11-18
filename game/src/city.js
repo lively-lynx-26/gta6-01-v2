@@ -1,0 +1,218 @@
+// Solmar Bay — Neon Tide: city generation. The city is built from one fixed
+// seed, so it is identical on every run: eight blocks by eight blocks of
+// streets, a Bayfront Plaza with a fountain at the centre, the Docks on the
+// south edge, the Marina on the east edge, and the beach and the ocean beyond
+// the south edge. This module also owns the collision data: every building is
+// an axis-aligned box the player and cars slide around.
+
+import * as THREE from 'three';
+import { CFG } from './config.js';
+import { makeRng, range, int, pick, shuffled } from './random.js';
+import { buildBuildingMesh, buildCarMesh, buildFountainMesh, buildTreeMesh } from './models.js';
+
+// Push a circle (x, z, radius) out of every building box it overlaps.
+// Returns the corrected position and whether any collision happened.
+export function resolveCircle(colliders, x, z, radius) {
+  let hit = false;
+  for (const b of colliders) {
+    const cx = Math.max(b.minX, Math.min(x, b.maxX));
+    const cz = Math.max(b.minZ, Math.min(z, b.maxZ));
+    let dx = x - cx;
+    let dz = z - cz;
+    const d2 = dx * dx + dz * dz;
+    if (d2 >= radius * radius) continue;
+    hit = true;
+    if (d2 > 1e-9) {
+      const d = Math.sqrt(d2);
+      const push = (radius - d) / d;
+      x += dx * push;
+      z += dz * push;
+    } else {
+      // Centre inside the box: push out along the smallest penetration.
+      const left = x - b.minX;
+      const right = b.maxX - x;
+      const top = z - b.minZ;
+      const bottom = b.maxZ - z;
+      const m = Math.min(left, right, top, bottom);
+      if (m === left) x = b.minX - radius;
+      else if (m === right) x = b.maxX + radius;
+      else if (m === top) z = b.minZ - radius;
+      else z = b.maxZ + radius;
+    }
+  }
+  return { x, z, hit };
+}
+
+// Keep a position inside the playable area: the city and the beach, not the
+// open ocean.
+export function clampToBounds(x, z) {
+  return {
+    x: Math.max(-200, Math.min(200, x)),
+    z: Math.max(-200, Math.min(214, z)),
+  };
+}
+
+function flat(color, roughness = 0.95) {
+  return new THREE.MeshStandardMaterial({ color, roughness, metalness: 0 });
+}
+
+export function buildCity(scene) {
+  const rng = makeRng(CFG.seed);
+  const colliders = [];
+  const parkedCars = [];
+  const trees = [];
+
+  // --- Ground: one asphalt sheet for the whole city, then raised concrete
+  // pads for each block, sand for the beach and water for the ocean.
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(900, 900), flat(0x3a3f45));
+  ground.rotation.x = -Math.PI / 2;
+  ground.position.y = 0;
+  scene.add(ground);
+
+  const beach = new THREE.Mesh(new THREE.PlaneGeometry(420, 26), flat(0xe0c98f));
+  beach.rotation.x = -Math.PI / 2;
+  beach.position.set(0, 0.06, 204);
+  scene.add(beach);
+
+  const ocean = new THREE.Mesh(
+    new THREE.PlaneGeometry(900, 300),
+    new THREE.MeshStandardMaterial({ color: 0x2f7fc4, roughness: 0.2, metalness: 0.15 }),
+  );
+  ocean.rotation.x = -Math.PI / 2;
+  ocean.position.set(0, 0.03, 366);
+  scene.add(ocean);
+
+  // Marina basin: open water cut into the east edge.
+  const marinaWater = new THREE.Mesh(
+    new THREE.PlaneGeometry(46, 76),
+    new THREE.MeshStandardMaterial({ color: 0x2f7fc4, roughness: 0.2, metalness: 0.15 }),
+  );
+  marinaWater.rotation.x = -Math.PI / 2;
+  marinaWater.position.set(170, 0.08, -24);
+  scene.add(marinaWater);
+
+  // Block centres on the 48 m pitch.
+  const centres = [];
+  for (let i = 0; i < CFG.blocks; i++) centres.push(-168 + i * CFG.blockPitch);
+
+  const inPlaza = (bx, bz) => Math.abs(bx) <= 24 && Math.abs(bz) <= 24;
+  const inDocks = (bx, bz) => bz === 168 && bx >= -72 && bx <= 72;
+  const inMarina = (bx, bz) => bx === 168 && bz === -24;
+
+  // --- Blocks: concrete pads, buildings, pocket parks.
+  for (const bx of centres) {
+    for (const bz of centres) {
+      if (inPlaza(bx, bz) || inDocks(bx, bz) || inMarina(bx, bz)) continue;
+      const pad = new THREE.Mesh(new THREE.BoxGeometry(36, 0.3, 36), flat(0x9aa0a3));
+      pad.position.set(bx, 0.15, bz);
+      scene.add(pad);
+
+      const roll = rng();
+      if (roll < 0.1) {
+        // Pocket park: trees and open grass.
+        const grass = new THREE.Mesh(new THREE.BoxGeometry(34, 0.35, 34), flat(0x6f9a55));
+        grass.position.set(bx, 0.18, bz);
+        scene.add(grass);
+        const count = int(rng, 3, 5);
+        for (let t = 0; t < count; t++) {
+          const tree = buildTreeMesh();
+          tree.position.set(bx + range(rng, -13, 13), 0.3, bz + range(rng, -13, 13));
+          scene.add(tree);
+          trees.push(tree);
+        }
+        continue;
+      }
+      const distCentre = Math.hypot(bx, bz);
+      const tallness = 1 - distCentre / 300; // taller near the centre
+      const buildings = roll < 0.62 ? 1 : 2;
+      for (let b = 0; b < buildings; b++) {
+        const w = range(rng, 14, 28);
+        const d = range(rng, 14, 28);
+        const h = Math.max(7, range(rng, 9, 20) + tallness * 18);
+        const ox = buildings === 1 ? range(rng, -3, 3) : (b === 0 ? -8 : 8) + range(rng, -2, 2);
+        const oz = buildings === 1 ? range(rng, -3, 3) : range(rng, -3, 3);
+        const x = bx + ox;
+        const z = bz + oz;
+        const mesh = buildBuildingMesh(w, h, d, pick(rng, CFG.buildingColors), pick(rng, CFG.roofColors));
+        mesh.position.set(x, 0.3, z);
+        scene.add(mesh);
+        colliders.push({ minX: x - w / 2 - 0.4, maxX: x + w / 2 + 0.4, minZ: z - d / 2 - 0.4, maxZ: z + d / 2 + 0.4 });
+      }
+    }
+  }
+
+  // --- Bayfront Plaza: a stone disc, the fountain, and a ring of trees.
+  const plazaDisc = new THREE.Mesh(new THREE.CylinderGeometry(40, 40, 0.3, 40), flat(0xd8cfc0));
+  plazaDisc.position.set(0, 0.15, 0);
+  scene.add(plazaDisc);
+  const fountain = buildFountainMesh();
+  fountain.position.set(0, 0.3, 0);
+  scene.add(fountain);
+  colliders.push({ minX: -4.6, maxX: 4.6, minZ: -4.6, maxZ: 4.6 });
+  for (let t = 0; t < 10; t++) {
+    const angle = (t / 10) * Math.PI * 2;
+    const tree = buildTreeMesh();
+    tree.position.set(Math.cos(angle) * 34, 0.3, Math.sin(angle) * 34);
+    scene.add(tree);
+    trees.push(tree);
+  }
+
+  // --- The Docks: warehouses on the south edge and piers over the water.
+  for (const wx of [-48, 0, 48]) {
+    const warehouse = buildBuildingMesh(30, 9, 20, 0xb09a7a, 0x6f7d8c);
+    warehouse.position.set(wx, 0.3, 168);
+    scene.add(warehouse);
+    colliders.push({ minX: wx - 15.4, maxX: wx + 15.4, minZ: 158, maxZ: 178.4 });
+  }
+  for (const px of [-36, 0, 36]) {
+    const pier = new THREE.Mesh(new THREE.BoxGeometry(6, 0.6, 44), flat(0x8a6f4d));
+    pier.position.set(px, 0.3, 214);
+    scene.add(pier);
+  }
+
+  // --- Street trees along the sidewalks.
+  for (let s = 0; s < 34; s++) {
+    const vertical = rng() < 0.5;
+    const line = pick(rng, [-144, -96, -48, 0, 48, 96, 144]);
+    const along = range(rng, -170, 170);
+    const tree = buildTreeMesh();
+    if (vertical) tree.position.set(line + pick(rng, [-7.5, 7.5]), 0, along);
+    else tree.position.set(along, 0, line + pick(rng, [-7.5, 7.5]));
+    // Keep trees out of the plaza disc and the docks.
+    if (Math.hypot(tree.position.x, tree.position.z) < 42) continue;
+    if (tree.position.z > 150) continue;
+    scene.add(tree);
+    trees.push(tree);
+  }
+
+  // --- Parked cars: ten of them along the streets, one Comet GT and one
+  // Bay Cab among them. A parked car is a stealable car.
+  const types = shuffled(rng, ['comet', 'cab', 'sedan', 'sedan', 'sedan', 'van', 'sedan', 'hauler', 'sedan', 'van']);
+  const lines = [-144, -96, -48, 0, 48, 96, 144];
+  for (let i = 0; i < CFG.parkedCars; i++) {
+    const type = types[i % types.length];
+    const vertical = rng() < 0.5;
+    const line = pick(rng, lines);
+    const along = range(rng, -160, 160);
+    const side = pick(rng, [-1, 1]);
+    const x = vertical ? line + side * 4.2 : along;
+    const z = vertical ? along : line + side * 4.2;
+    if (Math.hypot(x, z) < 44) continue; // keep the plaza clear
+    if (z > 150) continue; // keep the docks clear
+    const heading = vertical ? (side > 0 ? Math.PI : 0) : (side > 0 ? Math.PI / 2 : -Math.PI / 2);
+    const spec = CFG.cars[type];
+    const mesh = buildCarMesh(spec.body, spec.color);
+    mesh.position.set(x, 0, z);
+    mesh.rotation.y = heading;
+    scene.add(mesh);
+    parkedCars.push({ type, spec, x, z, heading, mesh, taken: false });
+  }
+
+  return {
+    colliders,
+    parkedCars,
+    plaza: { x: 0, z: 0 },
+    docks: { x: 0, z: 168 },
+    marina: { x: 168, z: -24 },
+  };
+}

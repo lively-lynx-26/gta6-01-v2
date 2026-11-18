@@ -18,6 +18,7 @@ export class AudioEngine {
     this.sirenOsc = null;
     this.sirenLfo = null;
     this.sirenGain = null;
+    this.skidGain = null;
     this.noiseBuffer = null;
   }
 
@@ -41,6 +42,7 @@ export class AudioEngine {
       for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
       this._buildEngine();
       this._buildSiren();
+      this._buildSkid();
       this.unlocked = true;
       if (this.ctx.state === 'suspended') this.ctx.resume().catch(() => {});
     } catch {
@@ -98,20 +100,44 @@ export class AudioEngine {
     this.sirenLfo.start();
   }
 
+  // The tyre skid: the same white noise, looped through a band-pass.
+  // Its gain follows the handbrake at speed, so a slide hisses.
+  _buildSkid() {
+    const ctx = this.ctx;
+    const src = ctx.createBufferSource();
+    src.buffer = this.noiseBuffer;
+    src.loop = true;
+    const band = ctx.createBiquadFilter();
+    band.type = 'bandpass';
+    band.frequency.value = 800;
+    band.Q.value = 0.7;
+    this.skidGain = ctx.createGain();
+    this.skidGain.gain.value = 0;
+    src.connect(band);
+    band.connect(this.skidGain);
+    this.skidGain.connect(this.master);
+    src.start();
+  }
+
   // Per-frame update: engine pitch by speed, siren loudness by distance.
-  // `state` is { driving, speed01, sirenDistance } — sirenDistance is null
-  // when no cruiser is chasing.
+  // `state` is { driving, speed01, sirenDistance, skid } — sirenDistance
+  // is null when no cruiser is chasing, skid is 0..1 while sliding.
   update(state) {
     if (!this.unlocked || !this.ctx) return;
     const t = this.ctx.currentTime;
     const driving = state.driving && !this.muted;
-    this.engineOsc.frequency.setTargetAtTime(55 + state.speed01 * 95, t, 0.08);
+    // The engine steps through gears: its pitch quantises to small steps
+    // as the speed climbs, instead of sliding smoothly the whole way.
+    const engineFreq = Math.round((55 + state.speed01 * 95) / 7) * 7;
+    this.engineOsc.frequency.setTargetAtTime(engineFreq, t, 0.08);
     this.engineSub.frequency.setTargetAtTime(28 + state.speed01 * 45, t, 0.08);
     this.engineFilter.frequency.setTargetAtTime(380 + state.speed01 * 900, t, 0.1);
     this.engineGain.gain.setTargetAtTime(driving ? 0.03 + state.speed01 * 0.075 : 0, t, 0.1);
     const sirenOn = state.sirenDistance !== null && state.sirenDistance !== undefined && !this.muted;
     const sirenLevel = sirenOn ? 0.14 * Math.max(0, 1 - state.sirenDistance / 130) : 0;
     this.sirenGain.gain.setTargetAtTime(sirenLevel, t, 0.2);
+    const skidLevel = !this.muted && state.skid ? state.skid * 0.12 : 0;
+    this.skidGain.gain.setTargetAtTime(skidLevel, t, 0.08);
   }
 
   // A gunshot: a short noise burst through a band-pass, plus a low thump.
@@ -213,6 +239,75 @@ export class AudioEngine {
         osc.start(t + offset);
         osc.stop(t + offset + 0.24);
       }
+    } catch {
+      // Silence is fine.
+    }
+  }
+
+  // The mission sting when a job pays out: four rising notes, bright
+  // and short, over the cash-register chime.
+  missionSting() {
+    if (!this.unlocked || !this.ctx || this.muted) return;
+    try {
+      const ctx = this.ctx;
+      const t = ctx.currentTime;
+      for (const [offset, freq] of [[0, 523.25], [0.1, 659.25], [0.2, 783.99], [0.3, 1046.5]]) {
+        const osc = ctx.createOscillator();
+        osc.type = 'triangle';
+        osc.frequency.value = freq;
+        const gain = ctx.createGain();
+        gain.gain.setValueAtTime(0.14, t + offset);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + offset + 0.3);
+        osc.connect(gain);
+        gain.connect(this.master);
+        osc.start(t + offset);
+        osc.stop(t + offset + 0.32);
+      }
+    } catch {
+      // Silence is fine.
+    }
+  }
+
+  // The wanted sting when the heat climbs: two low notes, a short warning.
+  wantedSting() {
+    if (!this.unlocked || !this.ctx || this.muted) return;
+    try {
+      const ctx = this.ctx;
+      const t = ctx.currentTime;
+      for (const [offset, freq] of [[0, 196], [0.14, 147]]) {
+        const osc = ctx.createOscillator();
+        osc.type = 'sawtooth';
+        osc.frequency.value = freq;
+        const gain = ctx.createGain();
+        gain.gain.setValueAtTime(0.09, t + offset);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + offset + 0.16);
+        osc.connect(gain);
+        gain.connect(this.master);
+        osc.start(t + offset);
+        osc.stop(t + offset + 0.18);
+      }
+    } catch {
+      // Silence is fine.
+    }
+  }
+
+  // The door thunk when Dario gets in or out of a car: a low thump.
+  door() {
+    if (!this.unlocked || !this.ctx || this.muted) return;
+    try {
+      const ctx = this.ctx;
+      const t = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(95, t);
+      osc.frequency.exponentialRampToValueAtTime(48, t + 0.1);
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0.22, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+      osc.connect(gain);
+      gain.connect(this.master);
+      osc.start(t);
+      osc.stop(t + 0.14);
     } catch {
       // Silence is fine.
     }

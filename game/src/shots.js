@@ -20,6 +20,7 @@ export const SHOTS = {
     stars: 3,
     mission: 'Mission 3 — The Drop',
     objective: 'Lose the cruisers and make the delivery',
+    waypoint: { x: 0, z: 150 }, // the delivery point, marked on the minimap
     steps: 24, // short: the cruisers close in during the steps, so fewer
     // steps keep them in the frame instead of on top of the camera
   },
@@ -36,6 +37,7 @@ export const SHOTS = {
     stars: 0,
     mission: 'Mission 1 — Sunset Fare',
     objective: 'Drive the fare across town',
+    waypoint: { x: 140, z: -24 }, // the Marina drop-off, marked on the minimap
     steps: 40,
   },
   foot: {
@@ -50,6 +52,7 @@ export const SHOTS = {
     stars: 0,
     mission: 'Mission 2 — Borrowed Wheels',
     objective: 'Take the wheels on foot',
+    waypoint: { x: 0, z: 0 }, // the Plaza, marked on the minimap
     steps: 20,
   },
   mission: {
@@ -64,6 +67,7 @@ export const SHOTS = {
     stars: 2,
     mission: 'Mission 4 — Dockside Heat',
     objective: 'Clear the docks',
+    waypoint: { x: 0, z: 150 }, // the Docks, marked on the minimap
     steps: 20,
   },
 };

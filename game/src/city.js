@@ -197,6 +197,22 @@ export function buildCity(scene) {
     parkedCars.push({ type, spec, x, z, heading, mesh, taken: false });
   }
 
+  // Two fixed vehicles give the Marina and the Docks their working
+  // traffic: a cab waiting by the Marina basin, a delivery van at the
+  // warehouses. Fixed spots, so the random stream is untouched.
+  const fixedParked = [
+    { type: 'cab', x: 140, z: -43.8, heading: Math.PI / 2 },
+    { type: 'van', x: -52.2, z: 148, heading: 0 },
+  ];
+  for (const spot of fixedParked) {
+    const spec = CFG.cars[spot.type];
+    const mesh = buildCarMesh(spec.body, spec.color);
+    mesh.position.set(spot.x, 0, spot.z);
+    mesh.rotation.y = spot.heading;
+    scene.add(mesh);
+    parkedCars.push({ type: spot.type, spec, x: spot.x, z: spot.z, heading: spot.heading, mesh, taken: false });
+  }
+
   return {
     colliders,
     parkedCars,

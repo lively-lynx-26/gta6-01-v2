@@ -17,6 +17,8 @@ import { Pedestrians } from './pedestrians.js';
 import { Police } from './police.js';
 import { Enemies } from './enemies.js';
 import { Missions } from './missions.js';
+import { Minimap } from './minimap.js';
+import { DamageSmoke } from './effects.js';
 
 const params = new URLSearchParams(window.location.search);
 const shotName = params.get('shot');
@@ -176,6 +178,11 @@ let cameraDistance = 8;
 let shotTitle = 'Free roam';
 let shotObjective = 'Explore Solmar Bay';
 let skyTime = 0;
+let lastStars = 0; // for the wanted sting when the heat climbs
+let lastBanner = null; // for the mission sting when a job pays out
+
+const minimap = new Minimap(el('hud-minimap'));
+const damageSmoke = new DamageSmoke(scene);
 
 function showHud() {
   hud.style.display = 'block';
@@ -214,6 +221,28 @@ function updateHud() {
   el('hud-speed').innerHTML = `${player.speedMph()} <small>MPH</small>`;
   el('hud-vehicle').textContent = player.vehicleName();
   el('hud-ammo').textContent = player.reloading ? 'RELOADING' : `PISTOL ${player.ammo}/12`;
+
+  // The live minimap draws the city, the waypoint, traffic, cruisers and
+  // the player every frame it is shown.
+  minimap.draw({
+    player,
+    traffic,
+    police,
+    waypoint: missions.waypoint,
+    time: skyTime,
+  });
+
+  // Sound the wanted sting when the heat climbs, and the mission sting
+  // when a job pays out.
+  if (player.stars > lastStars) audio.wantedSting();
+  lastStars = player.stars;
+  const banner = missions.bannerText;
+  if (banner && banner !== lastBanner
+    && (banner.startsWith('MISSION COMPLETE') || banner.startsWith('KING OF SOLMAR'))) {
+    audio.missionSting();
+    audio.chime();
+  }
+  lastBanner = banner;
 }
 
 function newGame() {
@@ -328,6 +357,8 @@ function applyShot() {
   player.carHealth = 100;
   shotTitle = shot.mission;
   shotObjective = shot.objective;
+  // The minimap marks the shot's waypoint, as live play would.
+  missions.waypoint = shot.waypoint ? { x: shot.waypoint.x, z: shot.waypoint.z } : null;
   cameraYaw = shot.heading + Math.PI;
   cameraPitch = shot.cameraPitch;
   cameraDistance = shot.cameraDistance;
@@ -405,7 +436,10 @@ function loop() {
     animateSky(skyTime);
     animateWater(city.water, skyTime);
     if (input.consume('KeyM')) audio.setMuted(!audio.muted);
+    const wasOnFoot = player.onFoot;
     player.update(dt, input, cameraYaw, world);
+    if (player.onFoot !== wasOnFoot) audio.door();
+    damageSmoke.update(dt, player.car, player.carHealth);
     missions.update(dt);
     const playerCar = player.onFoot
       ? null
@@ -418,6 +452,9 @@ function loop() {
       driving: !player.onFoot && Math.abs(player.carSpeed) > 0.5,
       speed01: player.onFoot ? player.speed / CFG.walkSpeed : Math.abs(player.carSpeed) / 55,
       sirenDistance: police.nearestCruiserDistance(),
+      // Skid: handbrake on at speed, louder the faster the car goes.
+      skid: !player.onFoot && input.down('Space') && Math.abs(player.carSpeed) > 10
+        ? Math.min(1, Math.abs(player.carSpeed) / 30) : 0,
     });
     updateCamera(dt);
     updateHud();
@@ -450,7 +487,7 @@ function loop() {
 // runs: the harness screenshots the frozen frame. In live mode the loop runs.
 // Debug hook for automated verification (harmless in the shipped game).
 window.__game = {
-  player, city, input, traffic, pedestrians, police, enemies, audio, missions,
+  player, city, input, traffic, pedestrians, police, enemies, audio, missions, damageSmoke,
   get cameraYaw() {
     return cameraYaw;
   },

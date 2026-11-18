@@ -26,13 +26,24 @@ export class Traffic {
     this.city = city;
     this.rng = makeRng(CFG.seed + 101); // its own stream, after the city's
     this.cars = [];
+    // Two cars work the Marina and two work the Docks, so those districts
+    // have their own traffic: cabs by the basin, delivery vans and a
+    // hauler at the warehouses. The rest roam the whole city.
+    const zones = ['marina', 'marina', 'docks', 'docks'];
+    const zoneTypes = { marina: ['cab', 'sedan'], docks: ['van', 'hauler'] };
     const types = ['sedan', 'sedan', 'sedan', 'van', 'sedan', 'cab', 'van', 'sedan', 'comet', 'sedan', 'van', 'sedan'];
     for (let i = 0; i < CFG.trafficCars; i++) {
-      const type = types[i % types.length];
+      const zone = zones[i] || null;
+      const type = zone ? zoneTypes[zone][i % 2] : types[i % types.length];
       const spec = CFG.cars[type];
-      // Start at a random intersection, heading down a random street.
-      const ix = pick(this.rng, STREETS);
-      const iz = pick(this.rng, STREETS);
+      // Start at a random intersection, heading down a random street — in
+      // the car's own district when it has one.
+      const ix = zone === 'marina' ? pick(this.rng, [144, 192])
+        : zone === 'docks' ? pick(this.rng, [-96, -48, 0, 48, 96])
+        : pick(this.rng, STREETS);
+      const iz = zone === 'marina' ? pick(this.rng, [-72, -24, 24])
+        : zone === 'docks' ? pick(this.rng, [144, 192])
+        : pick(this.rng, STREETS);
       const heading = pick(this.rng, [0, Math.PI / 2, Math.PI, -Math.PI / 2]);
       const mesh = buildCarMesh(spec.body, spec.color);
       scene.add(mesh);
@@ -44,8 +55,11 @@ export class Traffic {
         z: iz,
         heading,
         speed: range(this.rng, 6, 10),
-        cruise: range(this.rng, 8, 14),
+        cruise: zone === 'docks' ? range(this.rng, 6, 9)
+          : zone === 'marina' ? range(this.rng, 7, 11)
+          : range(this.rng, 8, 14),
         waypoint: null,
+        zone,
       };
       car.waypoint = this._nextWaypoint(car);
       this.cars.push(car);
@@ -74,6 +88,15 @@ export class Traffic {
     if (options.length === 0) {
       // At a corner with nowhere to go but back: turn around.
       return { x: gx - Math.round(fx) * 48, z: gz - Math.round(fz) * 48, grid: { x: gx - Math.round(fx) * 48, z: gz - Math.round(fz) * 48 } };
+    }
+    // A district car stays in its district: keep only the turns inside
+    // its streets, falling back to the whole city when none is.
+    if (car.zone) {
+      const inZone = car.zone === 'marina'
+        ? (p) => p.x >= 144 && p.x <= 192 && p.z >= -72 && p.z <= 24
+        : (p) => p.x >= -96 && p.x <= 96 && p.z >= 144 && p.z <= 192;
+      const zoned = options.filter(inZone);
+      if (zoned.length > 0) options.splice(0, options.length, ...zoned);
     }
     const pickPoint = pick(this.rng, options);
     // Drive on the right-hand side of the road: offset the waypoint by

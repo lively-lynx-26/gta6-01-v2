@@ -222,11 +222,12 @@ export const CFG = {
   },
 
   // Stunt jumps: three ramps around the city. Cross one fast in a car or
-  // on a bike and the jump is scored on airtime and distance.
+  // on a bike and the jump is scored on airtime and distance. `name` is
+  // where the jump happened, for the map stats.
   jumps: [
-    { x: -96, z: 0, heading: Math.PI / 2, minSpeed: 16 }, // east, over the plaza approach
-    { x: 48, z: 144, heading: 0, minSpeed: 16 }, // south, toward the Docks
-    { x: -144, z: -48, heading: Math.PI, minSpeed: 16 }, // north, up Old Town
+    { x: -96, z: 0, heading: Math.PI / 2, minSpeed: 16, name: 'Plaza Flyover' }, // east, over the plaza approach
+    { x: 48, z: 144, heading: 0, minSpeed: 16, name: 'Pier 9' }, // south, toward the Docks
+    { x: -144, z: -48, heading: Math.PI, minSpeed: 16, name: 'Old Town Rise' }, // north, up Old Town
   ],
   jumpPayPerMetre: 6, // dollars per metre jumped, capped
   jumpPayCap: 400,

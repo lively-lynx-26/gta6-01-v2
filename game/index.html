@@ -39,6 +39,9 @@
   #hud-district { position: absolute; top: 90px; left: 0; right: 0; text-align: center; display: none; }
   #hud-district-name { font-size: 30px; font-weight: 900; letter-spacing: 0.14em; text-shadow: 0 2px 8px rgba(0,0,0,0.8); }
   #hud-district-tag { font-size: 14px; opacity: 0.9; text-shadow: 0 1px 4px rgba(0,0,0,0.8); }
+  #hud-chapter { position: absolute; top: 30%; left: 0; right: 0; text-align: center; display: none; pointer-events: none; opacity: 0; transition: opacity 0.6s ease; }
+  #hud-chapter-name { font-size: 38px; font-weight: 900; letter-spacing: 0.12em; color: #ffe9a8; text-shadow: 0 0 22px rgba(255,190,60,0.55), 0 3px 0 rgba(0,0,0,0.5); }
+  #hud-chapter-hook { font-size: 16px; font-style: italic; opacity: 0.95; text-shadow: 0 1px 4px rgba(0,0,0,0.85); margin-top: 6px; }
   #hud-dialogue { position: absolute; bottom: 150px; left: 50%; transform: translateX(-50%); width: 520px; max-width: 80vw; background: rgba(8,16,24,0.85); border: 1px solid rgba(255,255,255,0.25); border-radius: 10px; padding: 10px 14px; display: none; gap: 12px; align-items: center; }
   #dlg-portrait { width: 72px; height: 72px; border-radius: 8px; flex: none; }
   #dlg-name { font-size: 13px; font-weight: 800; color: #ffd964; letter-spacing: 0.06em; }
@@ -158,6 +161,7 @@
   <div id="hud-top-right"><span id="hud-stars">☆☆☆☆☆</span><div id="hud-clock">FRI 17:24</div><div id="hud-weather">☀ CLEAR</div></div>
   <div id="hud-response"><div id="hud-response-title">SBPD RESPONSE</div><div id="hud-response-list"></div></div>
   <div id="hud-district"><div id="hud-district-name"></div><div id="hud-district-tag"></div></div>
+  <div id="hud-chapter"><div id="hud-chapter-name"></div><div id="hud-chapter-hook"></div></div>
   <div id="hud-bottom-left">
     <div class="bar-label">HEALTH</div>
     <div class="bar"><div id="hud-health-fill"></div></div>

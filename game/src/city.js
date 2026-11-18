@@ -194,6 +194,28 @@ export function buildCity(scene) {
   const fountain = buildFountainMesh(water);
   fountain.position.set(0, 0.3, 0);
   scene.add(fountain);
+  // The fountain lamp: a warm light over the plaza's centre, so the
+  // night foot fight reads — the goons stand in its glow instead of
+  // reading as dark silhouettes. It is off by day: the main loop sets
+  // its intensity from the night darkness, like the street lamps.
+  const fountainBulbMat = new THREE.MeshStandardMaterial({
+    color: 0xfff2b0, emissive: 0xffd970, emissiveIntensity: 0.15, roughness: 0.3,
+  });
+  const fountainBulb = new THREE.Mesh(new THREE.SphereGeometry(0.35, 12, 10), fountainBulbMat);
+  fountainBulb.position.set(0, 3.9, 0);
+  scene.add(fountainBulb);
+  const fountainGlow = new THREE.Mesh(
+    new THREE.SphereGeometry(1.1, 12, 10),
+    new THREE.MeshBasicMaterial({
+      color: 0xffc25e, transparent: true, opacity: 0.14,
+      blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+    }),
+  );
+  fountainGlow.position.set(0, 3.9, 0);
+  scene.add(fountainGlow);
+  const fountainLight = new THREE.PointLight(0xffb45e, 0, 32, 1.2);
+  fountainLight.position.set(0, 4.5, 0);
+  scene.add(fountainLight);
   colliders.push({ minX: -4.6, maxX: 4.6, minZ: -4.6, maxZ: 4.6, h: 3.5 });
   for (let t = 0; t < 10; t++) {
     const angle = (t / 10) * Math.PI * 2;
@@ -325,5 +347,8 @@ export function buildCity(scene) {
     marina: { x: 168, z: -24 },
     water, // the shared water shader material; the main loop animates it
     groundMat, // the asphalt material; the weather darkens it when it rains
+    fountainLight, // the warm lamp over the fountain; the main loop dims it by night
+    fountainBulbMat, // its bulb; the main loop lifts its glow after dark
+    fountainGlow, // its halo; the main loop fades it with the dark
   };
 }

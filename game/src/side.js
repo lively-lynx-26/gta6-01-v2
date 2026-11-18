@@ -68,7 +68,8 @@ export class SideActivities {
     // --- Stunt jumps: three ramps around the city, each with a marker.
     // Cross one fast in a car or on a bike and the jump is scored.
     this.ramps = [];
-    this.bestJump = { air: 0, dist: 0 };
+    this.bestJump = { air: 0, dist: 0, place: null };
+    this.jumpRamp = null; // the ramp the jump in the air started from
     for (const r of CFG.jumps) {
       const ramp = new THREE.Mesh(
         new THREE.BoxGeometry(6, 0.5, 8),
@@ -120,17 +121,25 @@ export class SideActivities {
     this.fareCooldown = 8;
     this.race = null;
     this.raceCooldown = 0;
-    this.bestJump = { air: 0, dist: 0 };
+    this.bestJump = { air: 0, dist: 0, place: null };
+    this.jumpRamp = null;
     this._clearEvent();
     this.eventTimer = CFG.events.firstAfter;
   }
 
   // A jump just landed: score it on distance, pay by the metre, and
-  // keep the best one for the stats.
+  // keep the best one for the stats — distance to one decimal, and
+  // where it happened, so the map reads like a record, not a blank.
   recordJump(airTime, dist) {
-    const metres = Math.round(dist);
+    const metres = Math.round(dist * 10) / 10;
     const pay = Math.min(CFG.jumpPayCap, Math.round(dist * CFG.jumpPayPerMetre));
-    if (metres > this.bestJump.dist) this.bestJump = { air: Math.round(airTime * 10) / 10, dist: metres };
+    if (metres > this.bestJump.dist) {
+      this.bestJump = {
+        air: Math.round(airTime * 10) / 10,
+        dist: metres,
+        place: this.jumpRamp ? this.jumpRamp.name : (this.bestJump.place ?? null),
+      };
+    }
     if (this.onPay) this.onPay(pay, 'Stunt jump');
     if (this.onRep) this.onRep(CFG.repJump, 'Stunt jump');
     if (this.onPopup) {
@@ -320,6 +329,7 @@ export class SideActivities {
       const along = Math.sin(p.carHeading) * Math.sin(r.heading)
         + Math.cos(p.carHeading) * Math.cos(r.heading);
       if (along < 0.6) continue;
+      this.jumpRamp = r;
       p.startJump(8 + speed * 0.18);
     }
 

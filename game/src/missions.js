@@ -21,16 +21,24 @@ import { STREETS } from './traffic.js';
 // The seven jobs, in order, with their pay. The finale pays the most: it is
 // the job that makes Dario King of Solmar. `stages` is how many phases the
 // job runs through — the HUD shows STAGE x/y, the timer and the next job,
-// like the top entries do.
+// like the top entries do. `hook` is the one-line pitch the chapter card
+// shows when the job starts, so the story reads like a film in chapters.
 export const MISSIONS = [
-  { title: 'Mission 1 — Sunset Fare', pay: 120, stages: 2 },
-  { title: 'Mission 2 — Borrowed Wheels', pay: 340, stages: 2 },
-  { title: 'Mission 3 — The Drop', pay: 1240, stages: 2 },
-  { title: 'Mission 4 — Dockside Heat', pay: 890, stages: 1 },
-  { title: 'Mission 5 — Double Cross', pay: 1100, stages: 3 },
-  { title: 'Mission 6 — Payback', pay: 1600, stages: 3 },
-  { title: 'Mission 7 — King of Solmar', pay: 2500, stages: 3 },
+  { title: 'Mission 1 — Sunset Fare', pay: 120, stages: 2, hook: 'One fare. One way out of the red.' },
+  { title: 'Mission 2 — Borrowed Wheels', pay: 340, stages: 2, hook: 'Borrow the wheels. Keep the engine running.' },
+  { title: 'Mission 3 — The Drop', pay: 1240, stages: 2, hook: 'A drop in the dark, and no questions.' },
+  { title: 'Mission 4 — Dockside Heat', pay: 890, stages: 1, hook: "The docks don't forgive slow hands." },
+  { title: 'Mission 5 — Double Cross', pay: 1100, stages: 3, hook: 'The man who sold you out is waiting.' },
+  { title: 'Mission 6 — Payback', pay: 1600, stages: 3, hook: 'Payback, in full, at the marina.' },
+  { title: 'Mission 7 — King of Solmar', pay: 2500, stages: 3, hook: 'One king. One city. Take the crown.' },
 ];
+
+// The chapter title for a job: "CHAPTER 1 — Sunset Fare".
+export function chapterTitle(index) {
+  const m = MISSIONS[index];
+  if (!m) return 'KING OF SOLMAR';
+  return `CHAPTER ${index + 1} — ${m.title.replace(/^Mission \d+ — /, '')}`;
+}
 
 const MARINA = { x: 140, z: -24 }; // the fare's drop-off, on the land by the basin
 const DOCKS = { x: 0, z: 150 }; // the delivery point, on the street by the warehouses
@@ -90,6 +98,9 @@ export class Missions {
     // Dialogue hook: the main loop sets onLine(name, text, portrait) so
     // Rosa, Vince and dispatch can brief the jobs. Null means silent.
     this.onLine = null;
+    // Chapter hook: the main loop sets onStart(index) so a chapter card
+    // shows when a job begins. Null means no card.
+    this.onStart = null;
     // REP hook: the main loop sets onRep(amount, label) so job pay also
     // pays respect. Null means no REP is awarded.
     this.onRep = null;
@@ -281,6 +292,8 @@ export class Missions {
       this.waypoint = { x: this.vehicle.x, z: this.vehicle.z };
       brief('One last job, Dario. Sloane runs the Docks himself now — take the Hauler to the Plaza, and this city is yours.');
     }
+    // The chapter card: the job opens like a film chapter.
+    if (this.onStart) this.onStart(index);
   }
 
   // --- One step, called every frame while playing ---------------------------

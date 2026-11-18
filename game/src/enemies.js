@@ -30,12 +30,16 @@ export class Enemies {
   }
 
   // Spawn a goon at (x, z), facing the player. Returns the enemy record.
+  // The faint warm emissive keeps the figure readable at night — a goon
+  // in a dark shirt under moonlight would otherwise be a black
+  // silhouette; the fountain lamp does the rest.
   spawn(x, z) {
     const mesh = buildPedestrianMesh({
       shirt: 0x1c1c22,
       pants: 0x222226,
       skin: 0xc98e6b,
       armed: true,
+      emissive: 0x2a1a0c,
     });
     this.scene.add(mesh);
     const enemy = {

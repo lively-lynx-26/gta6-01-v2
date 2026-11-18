@@ -552,13 +552,23 @@ export function buildPersonMesh() {
 // pivot at its joint, and the pivots are kept in userData so the walk cycle
 // can swing them. Faces +z. `hair` true means Dario's cap; `hairStyle`
 // picks one of 'cap' | 'short' | 'long' | 'bun' | 'none'. `armed` adds a
-// pistol in the right hand.
-export function buildPedestrianMesh({ shirt, pants, skin, hair = false, armed = false, height = 1, hairStyle = null }) {
+// pistol in the right hand. `emissive` lifts the figure out of the dark —
+// a faint warm glow on the clothes, so a goon never reads as a black
+// silhouette at night.
+export function buildPedestrianMesh({ shirt, pants, skin, hair = false, armed = false, height = 1, hairStyle = null, emissive = null }) {
   const group = new THREE.Group();
   const skinMat = std(skin, 0.7, 0);
   const shirtMat = std(shirt, 0.8, 0);
   const pantsMat = std(pants, 0.85, 0);
   const shoeMat = std(0x1c1a18, 0.9, 0);
+  if (emissive !== null) {
+    shirtMat.emissive.setHex(emissive);
+    pantsMat.emissive.setHex(emissive);
+    skinMat.emissive.setHex(emissive);
+    shirtMat.emissiveIntensity = 0.55;
+    pantsMat.emissiveIntensity = 0.55;
+    skinMat.emissiveIntensity = 0.35;
+  }
 
   const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.3, 0.72, 12), shirtMat);
   torso.position.y = 1.05;

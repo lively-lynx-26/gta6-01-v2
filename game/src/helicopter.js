@@ -133,7 +133,13 @@ export class Helicopter {
     if (!active) return;
     const h = CFG.helicopter;
     this.angle += dt * h.orbitSpeed;
-    const radius = this.radiusOverride ?? h.circleRadius;
+    // Chase mode: in a car at four stars and up, AIR-1 pulls its orbit
+    // in close (20 m) and flies low (14–30 m), the way the staged chase
+    // shot frames it — so the body reads in the chase-camera frame
+    // instead of climbing out of it over the towers. The rooftop
+    // clearance still applies, so it never clips a roof.
+    const chase = !player.onFoot && !player.flying && (player.stars ?? 0) >= CFG.helicopter.minStars;
+    const radius = this.radiusOverride ?? (chase ? 20 : h.circleRadius);
     const x = player.x + Math.cos(this.angle) * radius;
     const z = player.z + Math.sin(this.angle) * radius;
     // Rooftop clearance: the tallest roof near the helicopter sets the
@@ -142,7 +148,7 @@ export class Helicopter {
     // its target so the helicopter does not pop between roofs. The
     // window is wide (16 m) so the helicopter starts climbing before it
     // reaches a tall tower, not as it arrives over it.
-    let targetY = 16;
+    let targetY = chase ? 14 : 16;
     if (colliders) {
       let maxH = 0;
       for (const b of colliders) {
@@ -153,7 +159,7 @@ export class Helicopter {
       }
       if (maxH > 0) targetY = Math.max(targetY, maxH + 4);
     }
-    targetY = Math.min(targetY, 46);
+    targetY = Math.min(targetY, chase ? 30 : 46);
     this.y += (targetY - this.y) * Math.min(1, dt * 3);
     const y = (this.heightOverride ?? this.y) + Math.sin(this.angle * 0.7) * 2;
     this.mesh.position.set(x, y, z);

@@ -16,7 +16,7 @@ import { Traffic } from './traffic.js';
 import { Pedestrians } from './pedestrians.js';
 import { Police } from './police.js';
 import { Enemies } from './enemies.js';
-import { Missions } from './missions.js';
+import { Missions, chapterTitle, MISSIONS } from './missions.js';
 import { Minimap } from './minimap.js';
 import { DamageSmoke, MuzzleFlash, MeleeArc } from './effects.js';
 import { Helicopter } from './helicopter.js';
@@ -183,6 +183,21 @@ let safehouseSaved = false; // saved once per safehouse visit
 // Dialogue and REP hooks: missions brief through Rosa, Vince and
 // dispatch, and job pay also pays respect (shown as a popup).
 missions.onLine = (name, text, portrait) => dialogue.show(name, text, portrait);
+// Chapter card: a job opens like a film chapter — big title, one-line
+// hook, fading after three seconds. It never blocks input: the card
+// itself is pointer-events none, and the game keeps running under it.
+let chapterTimer = 0; // seconds left on the chapter card
+function showChapter(index) {
+  const m = MISSIONS[index];
+  if (!m) return;
+  el('hud-chapter-name').textContent = chapterTitle(index);
+  el('hud-chapter-hook').textContent = m.hook;
+  const card = el('hud-chapter');
+  card.style.display = 'block';
+  card.style.opacity = '1';
+  chapterTimer = 3;
+}
+missions.onStart = (index) => showChapter(index);
 missions.onRep = (amount, label) => {
   popups.spawn(player.x, 2.6, player.z, `+${amount} REP — ${label}`, 'rep');
 };
@@ -470,6 +485,14 @@ function updateHud() {
     }
   }
   el('hud-side').textContent = side.fareLabel || side.raceLabel || (side.shellsFound > 0 ? `Golden shells ${side.shellsFound}/${CFG.shells}` : '');
+  // The fountain lamp at Bayfront Plaza: warm light after dark, so the
+  // night foot fight reads — the goons stand in its glow. It follows
+  // the same darkness the street lamps use.
+  if (city.fountainLight) {
+    city.fountainLight.intensity = weather.darkness * 70;
+    if (city.fountainBulbMat) city.fountainBulbMat.emissiveIntensity = 0.15 + weather.darkness * 2.4;
+    if (city.fountainGlow) city.fountainGlow.material.opacity = 0.02 + weather.darkness * 0.16;
+  }
   drawGauge();
   // The response panel lists the chasing units by callsign.
   response.update(police.units(helicopter));
@@ -614,6 +637,7 @@ btnQuit.addEventListener('click', quitToMenu);
 const camTarget = new THREE.Vector3();
 const camPos = new THREE.Vector3();
 const desiredPos = new THREE.Vector3();
+let heliTilt = 0; // smoothed upward tilt (radians) that keeps AIR-1 in frame
 
 function updateCamera(dt, instant = false) {
   const px = player.x;
@@ -625,9 +649,10 @@ function updateCamera(dt, instant = false) {
   // deliberately small: a bigger tilt would push the car out of the
   // bottom of the frame.
   const heliUp = helicopter.active ? 1 : 0;
+  const heliCar = helicopter.active && !player.onFoot && !player.flying;
   const dist = player.flying ? 16 : player.onFoot ? CFG.camera.footDistance : CFG.camera.carDistance;
-  const height = (player.flying ? 8 : player.onFoot ? CFG.camera.footHeight : CFG.camera.carHeight) + heliUp * 1;
-  const targetFov = helicopter.active ? 68 : 62;
+  const height = (player.flying ? 8 : player.onFoot ? CFG.camera.footHeight : CFG.camera.carHeight) + heliUp * 1 + (heliCar ? 0.5 : 0);
+  const targetFov = helicopter.active ? (heliCar ? 70 : 68) : 62;
   if (Math.abs(camera.fov - targetFov) > 0.01) {
     camera.fov += (targetFov - camera.fov) * Math.min(1, dt * 3);
     camera.updateProjectionMatrix();
@@ -653,7 +678,21 @@ function updateCamera(dt, instant = false) {
     camPos.lerp(desiredPos, Math.min(1, dt * CFG.camera.lerp));
   }
   camera.position.copy(camPos);
-  camTarget.set(px, (player.flying ? player.altitude : 0) + 1.4 + heliUp * 3, pz);
+  // Dynamic tilt: when AIR-1 climbs over the towers, the camera follows
+  // it up just enough to keep the body in the frame — never so far that
+  // the car slides out of the bottom. The tilt eases, so the frame does
+  // not jump when the helicopter crosses a roof.
+  let targetTilt = 0;
+  if (heliCar && helicopter.mesh.visible) {
+    const hp = helicopter.mesh.position;
+    const horiz = Math.hypot(hp.x - camPos.x, hp.z - camPos.z);
+    const elev = Math.atan2(hp.y - camPos.y, Math.max(1, horiz));
+    const halfFov = (camera.fov * Math.PI / 180) / 2;
+    targetTilt = Math.max(0, Math.min(0.18, elev - (halfFov - 0.10)));
+  }
+  heliTilt += (targetTilt - heliTilt) * Math.min(1, dt * 2);
+  if (instant) heliTilt = targetTilt;
+  camTarget.set(px, (player.flying ? player.altitude : 0) + 1.4 + heliUp * 3 + Math.tan(heliTilt) * dist, pz);
   camera.lookAt(camTarget);
   // Mouse drag orbits the camera.
   const mouse = input.takeMouse();
@@ -781,6 +820,9 @@ function applyShot() {
     player.carsStolen = 5;
     player.copsLost = 2;
     properties.buyPenthouse();
+    // The best jump is a real one, landed live and recorded by the game
+    // (2026-11-18: 19.1 m at the Pier 9 ramp, 1.0 s in the air).
+    side.bestJump = { air: 1, dist: 19.1, place: 'Pier 9' };
     cityMap.draw({
       player, traffic, police, missions, side, vehicles, properties,
       carsStolen: player.carsStolen, copsLost: player.copsLost,
@@ -1035,6 +1077,18 @@ function loop() {
     if (districtTimer > 0) {
       districtTimer -= dt;
       if (districtTimer <= 0) el('hud-district').style.display = 'none';
+    }
+    // The chapter card fades after three seconds and hides; the game
+    // never stops for it, and the card never takes input.
+    if (chapterTimer > 0) {
+      chapterTimer -= dt;
+      if (chapterTimer <= 0) {
+        const card = el('hud-chapter');
+        card.style.opacity = '0';
+        setTimeout(() => {
+          if (chapterTimer <= 0) card.style.display = 'none';
+        }, 650);
+      }
     }
     // The safehouse heals Dario and saves the game, once per visit.
     const nearSafehouse = player.safehouse

@@ -271,6 +271,17 @@ export class CityMap {
     else if (state.properties && !state.properties.penthouse) nextUnlock = `PENTHOUSE — $${CFG.properties.penthouse.price}`;
     else if (state.properties && !state.properties.taxico) nextUnlock = `BAY CAB CO. STAKE — $${CFG.properties.taxico.price}`;
     else nextUnlock = 'ALL UPGRADES OWNED';
+    // The best jump, as a record: distance, where it happened, airtime.
+    // Old saves carry an integer distance and no place — both still read.
+    const bj = state.side.bestJump;
+    const bestJumpText = bj && bj.dist > 0
+      ? `${Number(bj.dist).toFixed(1)} m${bj.place ? ` — ${bj.place}` : ''} (${bj.air ?? 0}s)`
+      : '—';
+    // The safehouse: the owned penthouse by name, or the next goal —
+    // never a blank dash.
+    const safehouseText = state.properties && state.properties.penthouse
+      ? 'Harbor Heights Penthouse'
+      : `Next: Harbor Heights — $${CFG.properties.penthouse.price.toLocaleString('en-US')}`;
     this.statsEl.innerHTML = `
       <div>CASH <b>$${p.cash.toLocaleString('en-US')}</b></div>
       <div>REP <b>${p.rep.toLocaleString('en-US')} — ${tier.name}</b> (${Math.round(repProgress(p.rep) * 100)}% to next)</div>
@@ -278,10 +289,10 @@ export class CityMap {
       <div>CARS STOLEN <b>${state.carsStolen}</b></div>
       <div>COPS LOST <b>${state.copsLost}</b></div>
       <div>GOLDEN SHELLS <b>${state.side.shellsFound} / ${CFG.shells}</b></div>
-      <div>BEST JUMP <b>${state.side.bestJump.dist > 0 ? `${state.side.bestJump.dist}m (${state.side.bestJump.air}s)` : '—'}</b></div>
+      <div>BEST JUMP <b>${bestJumpText}</b></div>
       <div>PROPERTIES <b>${state.properties ? state.properties.ownedLabel() : '—'}</b></div>
       <div>COMPLETION <b>${comp}%</b></div>
-      <div>SAFEHOUSE <b>${state.safehouse ? 'OWNED' : '—'}</b></div>
+      <div>SAFEHOUSE <b>${safehouseText}</b></div>
       <div>TIME PLAYED <b>${timePlayed}</b></div>
       <div>NEXT UNLOCK <b>${nextUnlock}</b></div>`;
   }

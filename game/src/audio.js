@@ -291,6 +291,49 @@ export class AudioEngine {
     }
   }
 
+  // One radio jingle note: a soft triangle tone, the station's melody
+  // one note at a time.
+  radioNote(freq) {
+    if (!this.unlocked || !this.ctx || this.muted) return;
+    try {
+      const ctx = this.ctx;
+      const t = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      osc.type = 'triangle';
+      osc.frequency.value = freq;
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0.05, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+      osc.connect(gain);
+      gain.connect(this.master);
+      osc.start(t);
+      osc.stop(t + 0.42);
+    } catch {
+      // Silence is fine.
+    }
+  }
+
+  // The pickup chime for a shell, a fare or a race win: one bright note.
+  pickup() {
+    if (!this.unlocked || !this.ctx || this.muted) return;
+    try {
+      const ctx = this.ctx;
+      const t = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.value = 1568;
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0.1, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+      osc.connect(gain);
+      gain.connect(this.master);
+      osc.start(t);
+      osc.stop(t + 0.27);
+    } catch {
+      // Silence is fine.
+    }
+  }
+
   // The door thunk when Dario gets in or out of a car: a low thump.
   door() {
     if (!this.unlocked || !this.ctx || this.muted) return;

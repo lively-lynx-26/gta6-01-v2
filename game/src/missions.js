@@ -1,27 +1,33 @@
-// Solmar Bay — Neon Tide: the five story jobs for Rosa's Garage.
+// Solmar Bay — Neon Tide: the seven story jobs for Rosa's Garage.
 //
 // One job is active at a time, in order. Each shows its title and objective
 // in the HUD, marks its target with a glowing waypoint beacon in the world,
-// pays cash on completion and unlocks the next job. The count of finished
-// jobs lives on the player, so saving keeps it and reloading offers
+// pays cash and REP on completion and unlocks the next job. The count of
+// finished jobs lives on the player, so saving keeps it and reloading offers
 // CONTINUE from the next job. Failing a job (Dario goes down, or the job's
 // car is wrecked) restarts that job from where it began: the player is put
 // back on their feet, the job's car and goons are set up fresh, and the cash
 // already earned stays earned.
+//
+// The story turns in the middle: Vince Marlowe, the fixer who set Dario
+// up with Rosa, betrays them at the Docks in job five — and job six is
+// the payback, before the finale makes Dario King of Solmar.
 
 import * as THREE from 'three';
 import { CFG } from './config.js';
 import { buildCarMesh } from './models.js';
 import { STREETS } from './traffic.js';
 
-// The five jobs, in order, with their pay. The finale pays the most: it is
+// The seven jobs, in order, with their pay. The finale pays the most: it is
 // the job that makes Dario King of Solmar.
 export const MISSIONS = [
   { title: 'Mission 1 — Sunset Fare', pay: 120 },
   { title: 'Mission 2 — Borrowed Wheels', pay: 340 },
   { title: 'Mission 3 — The Drop', pay: 1240 },
   { title: 'Mission 4 — Dockside Heat', pay: 890 },
-  { title: 'Mission 5 — King of Solmar', pay: 2500 },
+  { title: 'Mission 5 — Double Cross', pay: 1100 },
+  { title: 'Mission 6 — Payback', pay: 1600 },
+  { title: 'Mission 7 — King of Solmar', pay: 2500 },
 ];
 
 const MARINA = { x: 140, z: -24 }; // the fare's drop-off, on the land by the basin
@@ -67,7 +73,7 @@ export class Missions {
     this.player = player;
     this.police = police;
     this.enemies = enemies;
-    this.index = 0; // jobs finished, 0 to 5; the next job is MISSIONS[index]
+    this.index = 0; // jobs finished, 0 to 7; the next job is MISSIONS[index]
     this.step = 0; // phase inside the current job
     this.phase = 'active'; // active | banner | done
     this.floor = 0; // wanted level the job holds the player at, 0 for none
@@ -78,6 +84,12 @@ export class Missions {
     this.banner = null; // { text, t } while a completion/failure banner shows
     this.time = 0;
     this._objective = 'Explore Solmar Bay';
+    // Dialogue hook: the main loop sets onLine(name, text, portrait) so
+    // Rosa, Vince and dispatch can brief the jobs. Null means silent.
+    this.onLine = null;
+    // REP hook: the main loop sets onRep(amount, label) so job pay also
+    // pays respect. Null means no REP is awarded.
+    this.onRep = null;
 
     // The waypoint beacon: a tall column of light and a ring on the ground.
     // It is hidden until a job gives it a target.
@@ -180,19 +192,28 @@ export class Missions {
     this.police.setStars(0);
     this.player.health = 100;
     this.player.ammo = CFG.pistol.magazine;
+    if (this.player.weapons.smg) this.player.ammoSmg = CFG.smg.magazine;
+    if (this.player.weapons.shotgun) this.player.ammoShotgun = CFG.shotgun.magazine;
     this.player.carHealth = 100;
+
+    // Rosa briefs every job in the dialogue box.
+    const brief = (text) => {
+      if (this.onLine) this.onLine('Rosa — Rosa\'s Garage', text, 'rosa');
+    };
 
     if (index === 0) {
       // Sunset Fare: a Bay Cab waits nearby; drive the fare to the Marina.
       this.vehicle = this._spawnMissionCar('cab');
       this._objective = 'Get in the Bay Cab';
       this.waypoint = { x: this.vehicle.x, z: this.vehicle.z };
+      brief("Dario, you're back. A fare's waiting at the cab — the Marina, and don't keep them waiting.");
     } else if (index === 1) {
       // Borrowed Wheels: three goons guard a Comet GT at the Plaza.
       this._spawnGoons([[18, 12], [-16, 20], [24, -14]]);
       this.vehicle = this._spawnMissionCarAt('comet', 30, 18, Math.PI);
       this._objective = 'Clear the goons at the Plaza';
       this.waypoint = { x: 0, z: 0 };
+      brief('Some punks took our Comet GT. Clear them out and bring my car back.');
     } else if (index === 2) {
       // The Drop: a Comet GT waits nearby; deliver to the Docks with three
       // cruisers on the tail the whole way.
@@ -200,19 +221,36 @@ export class Missions {
       this.floor = 3;
       this._objective = 'Get in the Comet GT';
       this.waypoint = { x: this.vehicle.x, z: this.vehicle.z };
+      brief("A drop at the Docks. Three stars on your tail the whole way — lose them, don't fight them.");
     } else if (index === 3) {
       // Dockside Heat: four goons hold the Docks; clear them at two stars.
       this._spawnGoons([[-24, 150], [24, 150], [-72, 150], [72, 150]]);
       this.floor = 2;
       this._objective = 'Clear the Docks';
       this.waypoint = { x: DOCKS.x, z: DOCKS.z };
+      brief("The Docks are crawling with Vince's boys. Clear them out.");
     } else if (index === 4) {
+      // Double Cross: Vince Marlowe calls a truce meeting at the Docks.
+      // It is an ambush — four goons and three stars when Dario arrives.
+      this._objective = 'Meet Vince at the Docks';
+      this.waypoint = { x: DOCKS.x, z: DOCKS.z };
+      brief("Vince wants to meet at the Docks — says it's a truce. I don't trust it. Watch your back.");
+    } else if (index === 5) {
+      // Payback: Vince's crew holds the Marina; take the Comet GT there
+      // and clear them, with three stars on the tail.
+      this.vehicle = this._spawnMissionCar('comet');
+      this.floor = 3;
+      this._objective = 'Take the Comet GT to the Marina';
+      this.waypoint = { x: this.vehicle.x, z: this.vehicle.z };
+      brief("Vince crossed us. His crew's at the Marina — make him pay.");
+    } else if (index === 6) {
       // King of Solmar: take the Vault Hauler, drive it to the Plaza, then
       // clear the guards and take the city.
       this.vehicle = this._spawnMissionCar('hauler');
       this.floor = 3;
       this._objective = 'Take the Vault Hauler';
       this.waypoint = { x: this.vehicle.x, z: this.vehicle.z };
+      brief('One last job, Dario. Take the Hauler to the Plaza, and this city is yours.');
     }
   }
 
@@ -294,6 +332,9 @@ export class Missions {
           this.step = 1;
           this._objective = 'Deliver to the Docks — outrun the cruisers';
           this.waypoint = { x: DOCKS.x, z: DOCKS.z };
+          if (this.onLine) {
+            this.onLine('Dispatch — Sgt. Fenn', 'All units, red Comet GT, southbound from the Plaza. Air support is on standby.', 'fenn');
+          }
         }
       } else if (!p.onFoot && p.car === this.vehicle) {
         this._objective = 'Deliver to the Docks — outrun the cruisers';
@@ -307,6 +348,54 @@ export class Missions {
       // Dockside Heat.
       if (this.goonsAlive() === 0) this.complete();
     } else if (this.index === 4) {
+      // Double Cross: the truce is a trap. Reaching the Docks springs
+      // the ambush — four goons and three stars.
+      if (this.step === 0) {
+        if (near(DOCKS.x, DOCKS.z, 10)) {
+          this.step = 1;
+          this.floor = 3;
+          // All four on the open street in front of the warehouses: the
+          // warehouse walls block shots, so a goon inside one could never
+          // be hit and the job could never be finished.
+          this._spawnGoons([[-24, 150], [24, 150], [-48, 150], [48, 150]]);
+          this._objective = 'Ambush! Clear the Docks';
+          this.waypoint = { x: DOCKS.x, z: DOCKS.z };
+          if (this.onLine) {
+            this.onLine('Vince Marlowe', "You should've stayed gone, Cruz. Boys — take him down!", 'vince');
+          }
+        }
+      } else if (this.goonsAlive() === 0) {
+        this.complete();
+      }
+    } else if (this.index === 5) {
+      // Payback: drive the Comet GT to the Marina, then clear Vince's crew.
+      if (this.step === 0) {
+        if (!p.onFoot && p.car && p.car.type === 'comet') {
+          this.vehicle = p.car;
+          this.step = 1;
+          this._objective = 'Drive to the Marina';
+          this.waypoint = { x: MARINA.x, z: MARINA.z };
+        }
+      } else if (this.step === 1) {
+        if (!p.onFoot && p.car === this.vehicle) {
+          this._objective = 'Drive to the Marina';
+          this.waypoint = { x: MARINA.x, z: MARINA.z };
+          if (near(MARINA.x, MARINA.z, 12)) {
+            this.step = 2;
+            // On the open streets by the basin — never inside a building
+            // or in the water, where a goon could not be hit or reached.
+            this._spawnGoons([[120, -48], [132, -24], [144, -48], [144, 0]]);
+            this._objective = "Clear the Marina — Vince's crew";
+            this.waypoint = { x: MARINA.x, z: MARINA.z };
+          }
+        } else {
+          this._objective = 'Get back in the Comet GT';
+          this.waypoint = { x: this.vehicle.x, z: this.vehicle.z };
+        }
+      } else if (this.goonsAlive() === 0) {
+        this.complete();
+      }
+    } else if (this.index === 6) {
       // King of Solmar.
       if (this.step === 0) {
         if (!p.onFoot && p.car && p.car.type === 'hauler') {
@@ -350,6 +439,25 @@ export class Missions {
   complete() {
     const job = MISSIONS[this.index];
     this.player.cash += job.pay;
+    // Every job pays respect as well as cash.
+    const rep = CFG.repForMission[this.index] ?? 0;
+    this.player.rep += rep;
+    if (this.onRep) this.onRep(rep, job.title);
+    // Weapon unlocks: the SMG after job 2, the shotgun after job 4.
+    if (this.index === 1 && !this.player.weapons.smg) {
+      this.player.weapons.smg = true;
+      this.player.ammoSmg = CFG.smg.magazine;
+      if (this.onLine) {
+        this.onLine('Rosa — Rosa\'s Garage', 'Nice work. Take the Squall SMG from the locker — slot 2. You\'ll need it.', 'rosa');
+      }
+    }
+    if (this.index === 3 && !this.player.weapons.shotgun) {
+      this.player.weapons.shotgun = true;
+      this.player.ammoShotgun = CFG.shotgun.magazine;
+      if (this.onLine) {
+        this.onLine('Rosa — Rosa\'s Garage', "Breaker 12 is yours now — slot 3. Vince won't stop at the Docks.", 'rosa');
+      }
+    }
     this.index += 1;
     this.player.mission = this.index;
     this.floor = 0;
@@ -386,6 +494,8 @@ export class Missions {
     this.goons = [];
     this.player.health = 100;
     this.player.ammo = CFG.pistol.magazine;
+    if (this.player.weapons.smg) this.player.ammoSmg = CFG.smg.magazine;
+    if (this.player.weapons.shotgun) this.player.ammoShotgun = CFG.shotgun.magazine;
     this.player.carHealth = 100;
     this.player.spawn(this.spawnPoint.x, this.spawnPoint.z, this.spawnPoint.heading);
   }

@@ -24,6 +24,52 @@ function smokeTexture() {
 
 const SOOT = new THREE.Color(0x26262a);
 
+// A muzzle flash: one bright sprite at the gun for a fraction of a
+// second when Dario fires. showAt() puts it in the frame; update() fades
+// it out. In a frozen screenshot frame it stays where it was put, so the
+// foot scene shows the shot going off.
+export class MuzzleFlash {
+  constructor(scene) {
+    const c = document.createElement('canvas');
+    c.width = 64;
+    c.height = 64;
+    const ctx = c.getContext('2d');
+    const g = ctx.createRadialGradient(32, 32, 1, 32, 32, 30);
+    g.addColorStop(0, 'rgba(255, 240, 170, 1)');
+    g.addColorStop(0.4, 'rgba(255, 170, 60, 0.85)');
+    g.addColorStop(1, 'rgba(255, 90, 20, 0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 64, 64);
+    const tex = new THREE.CanvasTexture(c);
+    this.sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: tex, transparent: true, opacity: 0, depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    }));
+    this.sprite.visible = false;
+    this.life = 0;
+    scene.add(this.sprite);
+  }
+
+  showAt(x, y, z) {
+    this.sprite.position.set(x, y, z);
+    this.sprite.scale.set(1.8, 1.8, 1);
+    this.sprite.material.opacity = 0.95;
+    this.sprite.visible = true;
+    this.life = 0.09;
+  }
+
+  update(dt) {
+    if (this.life <= 0) return;
+    this.life -= dt;
+    if (this.life <= 0) {
+      this.sprite.visible = false;
+      this.sprite.material.opacity = 0;
+      return;
+    }
+    this.sprite.material.opacity = 0.95 * (this.life / 0.09);
+  }
+}
+
 export class DamageSmoke {
   constructor(scene) {
     this.scene = scene;

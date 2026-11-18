@@ -20,6 +20,9 @@ function wrapAngle(a) {
   return d;
 }
 
+const CALLSIGNS = ['Kestrel', 'Falcon', 'Heron', 'Osprey', 'Merlin', 'Harrier', 'Egret', 'Kite'];
+const UNIT_NUMBERS = [3, 5, 7, 9, 11, 12, 14, 17];
+
 export class Police {
   constructor(scene, city, player) {
     this.scene = scene;
@@ -30,6 +33,45 @@ export class Police {
     this.heat = 0; // fractional heat; one whole star per unit
     this.coolTimer = 0;
     this.time = 0;
+    // Set when the wanted level is cleared by force — a mission start, a
+    // failed job, a respray — rather than by losing the cops. The main
+    // loop reads it and skips the escape award for such a clear; it is
+    // consumed on the next HUD update. Losing the heat by cooling off
+    // (update lowers heat directly) never sets it.
+    this.clearedStars = false;
+    this.callsignIndex = 0; // hands out Unit numbers and bird names
+    this.roadblock = null; // the parked cruiser blocking the road ahead
+  }
+
+  // The next callsign in rotation: "Unit 7 'Kestrel'".
+  _nextCallsign() {
+    const n = UNIT_NUMBERS[this.callsignIndex % UNIT_NUMBERS.length];
+    const bird = CALLSIGNS[this.callsignIndex % CALLSIGNS.length];
+    this.callsignIndex += 1;
+    return `Unit ${n} '${bird}'`;
+  }
+
+  // The units the response panel lists: every chasing cruiser with its
+  // distance and what it is doing, plus the roadblock when one is set,
+  // plus the helicopter as AIR-1 when it flies.
+  units(helicopter) {
+    const list = [];
+    for (const c of this.cruisers) {
+      if (c.state !== 'chase' && c.state !== 'roadblock') continue;
+      const d = Math.hypot(c.x - this.player.x, c.z - this.player.z);
+      let status = 'PURSUING';
+      if (c.state === 'roadblock') status = 'ROADBLOCK';
+      else if (!this.player.onFoot && d < CFG.police.ramDistance && c.speed > 8) status = 'RAMMING';
+      list.push({ callsign: c.callsign, distance: d, status });
+    }
+    if (helicopter && helicopter.active) {
+      const d = Math.hypot(
+        helicopter.mesh.position.x - this.player.x,
+        helicopter.mesh.position.z - this.player.z,
+      );
+      list.push({ callsign: 'AIR-1', distance: d, status: 'SEARCHLIGHT' });
+    }
+    return list;
   }
 
   // Current wanted level, zero to five.
@@ -38,6 +80,10 @@ export class Police {
   }
 
   setStars(n) {
+    // A forced clear is not an escape: mark it so the escape award skips
+    // this drop. (clearCruisers zeroes the heat directly, so the flag is
+    // set here unconditionally — every forced clear goes through setStars.)
+    if (n === 0) this.clearedStars = true;
     this.heat = Math.max(0, Math.min(5, n));
     this.coolTimer = 0;
   }
@@ -81,7 +127,8 @@ export class Police {
       z,
       heading: Math.atan2(this.player.x - x, this.player.z - z),
       speed: 0,
-      state: 'chase', // chase | leave
+      state: 'chase', // chase | leave | roadblock
+      callsign: this._nextCallsign(),
       lightRed: mesh.userData.lightRed,
       lightBlue: mesh.userData.lightBlue,
       ramCooldown: 0,
@@ -121,8 +168,40 @@ export class Police {
   clearCruisers() {
     for (const c of this.cruisers) this.scene.remove(c.mesh);
     this.cruisers.length = 0;
+    this.roadblock = null;
     this.heat = 0;
     this.coolTimer = 0;
+  }
+
+  // A roadblock: one cruiser parked across the road ahead of the player,
+  // lights flashing, at three stars and up. It does not move; the player
+  // drives around it or through the gap.
+  _placeRoadblock() {
+    const p = this.player;
+    const fx = Math.sin(p.heading);
+    const fz = Math.cos(p.heading);
+    const x = p.x + fx * 55;
+    const z = p.z + fz * 55;
+    if (Math.abs(x) > 188 || Math.abs(z) > 188) return;
+    const cruiser = this._spawnCruiser();
+    cruiser.x = x;
+    cruiser.z = z;
+    cruiser.heading = p.heading + Math.PI / 2; // parked across the road
+    cruiser.speed = 0;
+    cruiser.state = 'roadblock';
+    cruiser.mesh.position.set(x, 0, z);
+    cruiser.mesh.rotation.y = cruiser.heading;
+    this.roadblock = cruiser;
+  }
+
+  _clearRoadblock() {
+    if (!this.roadblock) return;
+    const i = this.cruisers.indexOf(this.roadblock);
+    if (i !== -1) {
+      this.scene.remove(this.roadblock.mesh);
+      this.cruisers.splice(i, 1);
+    }
+    this.roadblock = null;
   }
 
   // Distance to the nearest chasing cruiser, or null when none is chasing.
@@ -189,11 +268,25 @@ export class Police {
       farthest.state = 'leave';
     }
 
+    // --- Roadblock: at three stars and up one cruiser parks across the
+    // road ahead; below three stars it is gone.
+    if (wanted >= 3 && !this.roadblock) this._placeRoadblock();
+    else if (wanted < 3 && this.roadblock) this._clearRoadblock();
+
     // --- Cruiser behaviour.
     const playerSpeed = p.onFoot ? p.speed : Math.abs(p.carSpeed);
     for (let i = this.cruisers.length - 1; i >= 0; i--) {
       const c = this.cruisers[i];
       c.ramCooldown = Math.max(0, c.ramCooldown - dt);
+      if (c.state === 'roadblock') {
+        // Parked across the road, lights flashing, going nowhere.
+        const flash = Math.sin(this.time * 11) > 0;
+        if (c.lightRed && c.lightBlue) {
+          c.lightRed.material.emissiveIntensity = flash ? 2.2 : 0.15;
+          c.lightBlue.material.emissiveIntensity = flash ? 0.15 : 2.2;
+        }
+        continue;
+      }
       if (c.state === 'leave') {
         // Drive away from the player, then despawn.
         const away = Math.atan2(c.x - p.x, c.z - p.z);

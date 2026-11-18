@@ -62,7 +62,9 @@ export const CFG = {
     coolTime: [6, 9, 12, 15, 18], // seconds to shed one star, per star level
   },
 
-  // Combat.
+  // Combat. Three weapons in slots 1-3 (slot 4 stays empty): the pistol
+  // Dario starts with, the Squall SMG unlocked after mission 2, and the
+  // Breaker 12 shotgun unlocked after mission 4.
   pistol: {
     magazine: 12,
     damage: 34, // three hits drop a mission goon
@@ -70,6 +72,96 @@ export const CFG = {
     reloadSeconds: 0.9,
     heatPerShot: 1 / 3, // three shots are worth one star
   },
+  smg: {
+    name: 'Squall SMG',
+    magazine: 30,
+    damage: 20, // six hits drop a mission goon
+    range: 55,
+    reloadSeconds: 1.4,
+    fireInterval: 0.09, // hold to fire
+    heatPerShot: 1 / 5,
+    price: 800,
+  },
+  shotgun: {
+    name: 'Breaker 12',
+    magazine: 6,
+    damage: 30, // three pellets per shot, 90 up close
+    pellets: 3,
+    range: 32,
+    reloadSeconds: 2.2,
+    heatPerShot: 1 / 2,
+    price: 1200,
+  },
+
+  // The police helicopter: at four stars and up (and in mission 3) AIR-1
+  // circles above the player with a searchlight.
+  helicopter: {
+    minStars: 4,
+    height: 34,
+    circleRadius: 30,
+    orbitSpeed: 0.35, // radians per second around the player
+  },
+
+  // REP / respect: earned on jobs and stunts, spent nowhere — it is a
+  // rank. Tiers are ROOKIE, HUSTLER, WHEELMAN, FIXER, KING OF SOLMAR.
+  repTiers: [
+    { name: 'ROOKIE', at: 0 },
+    { name: 'HUSTLER', at: 500 },
+    { name: 'WHEELMAN', at: 1500 },
+    { name: 'FIXER', at: 3000 },
+    { name: 'KING OF SOLMAR', at: 6000 },
+  ],
+  repForMission: [120, 340, 500, 450, 550, 800, 1000], // per mission index
+  repNearMiss: 25,
+  repDrift: 15,
+  repTakedown: 100,
+  repEscape: 150, // losing every star while wanted
+  repFare: 20,
+  repRace: 200,
+  repShell: 10,
+
+  // Rosa's Garage: upgrades for the car Dario drives, a respray that
+  // clears the heat, and the gun shop. Prices in dollars.
+  garage: {
+    position: { x: 48, z: 48 }, // Rosa's Garage, on the plaza's east side
+    enginePrice: 500, // +15% top speed and acceleration, up to 3 levels
+    armorPrice: 600, // +50 max car health, up to 3 levels
+    nitroPrice: 400, // Shift for a boost while driving
+    resprayPrice: 150, // new paint + clears the wanted level
+    safehousePrice: 1500, // buy once: heal on visit, save anywhere
+    paintColors: [0xc22424, 0x2e6f8e, 0xf2b705, 0x2e8b57, 0x6a3d9a, 0xe8e8e8],
+  },
+
+  // Radio: three stations, each with a song and a short jingle.
+  radio: [
+    { name: 'SOLMAR FM 96.4', song: 'Sunset Drive', notes: [523, 659, 784, 1047] },
+    { name: 'NEON WAVE 88.1', song: 'Midnight Tide', notes: [440, 554, 659, 880] },
+    { name: 'BAY BEATS 104.7', song: 'Paloma Nights', notes: [392, 494, 587, 784] },
+  ],
+
+  // The clock: the game starts Friday 17:24 and one game minute passes
+  // per real second. Golden hour is the sunset palette for the chase.
+  clock: { day: 'FRI', startMinutes: 17 * 60 + 24 },
+  golden: {
+    top: 0x2a4d8f,
+    horizon: 0xff9a52,
+    sun: 0xffb45e,
+    sunIntensity: 2.2,
+    hemiSky: 0x8f9fd0,
+    hemiGround: 0x7a5a3f,
+    hemiIntensity: 0.9,
+    fog: 0xe8b98a,
+  },
+
+  // Side activities: taxi fares in the Bay Cab, one street race, and
+  // twelve golden shells hidden on the beach.
+  farePay: 120,
+  racePay: 300,
+  raceStart: { x: 144, z: -24 }, // Boulevard Sprint starts at the Marina
+  raceTarget: { x: -144, z: 144 }, // and ends at the Docks corner
+  raceTimeLimit: 75, // seconds
+  shells: 12,
+  shellPay: 50,
   enemy: {
     health: 100,
     engageRange: 45,

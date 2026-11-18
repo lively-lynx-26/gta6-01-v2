@@ -26,6 +26,17 @@ export function saveGame(state) {
       x: state.x,
       z: state.z,
       heading: state.heading,
+      rep: state.rep ?? 0,
+      armor: state.armor ?? 0,
+      weapons: state.weapons ?? { smg: false, shotgun: false },
+      engineLevel: state.engineLevel ?? 0,
+      armorLevel: state.armorLevel ?? 0,
+      nitro: state.nitro ?? false,
+      safehouse: state.safehouse ?? false,
+      carsStolen: state.carsStolen ?? 0,
+      copsLost: state.copsLost ?? 0,
+      ownedCars: state.ownedCars ?? [],
+      shellsFound: state.shellsFound ?? 0,
       savedAt: Date.now(),
     };
     window.localStorage.setItem(KEY, JSON.stringify(data));

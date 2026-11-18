@@ -67,11 +67,14 @@ export class Enemies {
     this.tracers.length = 0;
   }
 
-  // The player's pistol: a ray from (ox, oz) along direction (dx, dz).
-  // Returns the goon it hit (and damages it), or null.
-  shootAt(ox, oz, dx, dz) {
+  // The player's shot: a ray from (ox, oz) along direction (dx, dz).
+  // `damage` and `range` come from the weapon fired (the pistol's
+  // defaults keep the old callers working); `pellets` fires that many
+  // rays with a small spread, for the shotgun. Returns the goon hit and
+  // the damage dealt, or null — the caller shows the damage number.
+  shootAt(ox, oz, dx, dz, damage = CFG.pistol.damage, range = CFG.pistol.range, pellets = 1) {
     let best = null;
-    let bestAlong = CFG.pistol.range;
+    let bestAlong = range;
     for (const e of this.list) {
       if (e.state !== 'alive') continue;
       const ex = e.x - ox;
@@ -84,22 +87,29 @@ export class Enemies {
       bestAlong = along;
       best = e;
     }
-    if (best) {
-      best.health -= CFG.pistol.damage;
-      if (best.health <= 0) {
-        best.state = 'dead';
-        best.deadTimer = 4;
-        const u = best.mesh.userData;
-        u.legL.rotation.x = 0;
-        u.legR.rotation.x = 0;
-        u.armL.rotation.x = 0;
-        u.armR.rotation.x = 0;
-        u.torso.rotation.x = 0;
-        best.mesh.rotation.x = -Math.PI / 2;
-        best.mesh.position.y = 0.35;
-      }
+    if (!best) return null;
+    // A shotgun's pellets spread with distance: all three land up
+    // close, two at mid range, one at the edge of the pattern.
+    let hits = pellets;
+    if (pellets > 1) {
+      const d = Math.hypot(best.x - ox, best.z - oz);
+      hits = d < range * 0.5 ? 3 : d < range * 0.8 ? 2 : 1;
     }
-    return best;
+    const total = damage * hits;
+    best.health -= total;
+    if (best.health <= 0) {
+      best.state = 'dead';
+      best.deadTimer = 4;
+      const u = best.mesh.userData;
+      u.legL.rotation.x = 0;
+      u.legR.rotation.x = 0;
+      u.armL.rotation.x = 0;
+      u.armR.rotation.x = 0;
+      u.torso.rotation.x = 0;
+      best.mesh.rotation.x = -Math.PI / 2;
+      best.mesh.position.y = 0.35;
+    }
+    return { enemy: best, damage: total, killed: best.state === 'dead' };
   }
 
   // A short-lived tracer line from the shooter toward the player.
@@ -178,7 +188,8 @@ export class Enemies {
         const gx = e.x + Math.sin(e.heading) * 0.4;
         const gz = e.z + Math.cos(e.heading) * 0.4;
         this._tracer(gx, 1.35, gz, player.x, player.onFoot ? 1.2 : 0.9, player.z);
-        if (player.onFoot) player.health = Math.max(0, player.health - CFG.enemy.damageOnFoot);
+        // Armour absorbs half of the hit, when Dario wears any.
+        if (player.onFoot) player.hurt(CFG.enemy.damageOnFoot);
         else player.carHealth = Math.max(0, (player.carHealth ?? 100) - CFG.enemy.damageInCar);
         if (onShotFired) onShotFired(dist);
       }

@@ -102,7 +102,7 @@ export function buildCity(scene) {
         scene.add(grass);
         const count = int(rng, 3, 5);
         for (let t = 0; t < count; t++) {
-          const tree = buildTreeMesh();
+          const tree = buildTreeMesh(rng, 'shade', textures.bark);
           tree.position.set(bx + range(rng, -13, 13), 0.3, bz + range(rng, -13, 13));
           scene.add(tree);
           trees.push(tree);
@@ -138,7 +138,7 @@ export function buildCity(scene) {
   colliders.push({ minX: -4.6, maxX: 4.6, minZ: -4.6, maxZ: 4.6 });
   for (let t = 0; t < 10; t++) {
     const angle = (t / 10) * Math.PI * 2;
-    const tree = buildTreeMesh();
+    const tree = buildTreeMesh(rng, 'shade', textures.bark);
     tree.position.set(Math.cos(angle) * 34, 0.3, Math.sin(angle) * 34);
     scene.add(tree);
     trees.push(tree);
@@ -159,12 +159,12 @@ export function buildCity(scene) {
     colliders.push({ minX: px - 3, maxX: px + 3, minZ: 192, maxZ: 236 });
   }
 
-  // --- Street trees along the sidewalks.
+  // --- Street trees in planters along the sidewalks.
   for (let s = 0; s < 34; s++) {
     const vertical = rng() < 0.5;
     const line = pick(rng, [-144, -96, -48, 0, 48, 96, 144]);
     const along = range(rng, -170, 170);
-    const tree = buildTreeMesh();
+    const tree = buildTreeMesh(rng, 'planter', textures.bark);
     if (vertical) tree.position.set(line + pick(rng, [-7.5, 7.5]), 0, along);
     else tree.position.set(along, 0, line + pick(rng, [-7.5, 7.5]));
     // Keep trees out of the plaza disc and the docks.
@@ -174,21 +174,53 @@ export function buildCity(scene) {
     trees.push(tree);
   }
 
+  // --- Palms along the beach and the Marina: tall curved trunks and
+  // fronds where the city meets the water.
+  for (let p = 0; p < 10; p++) {
+    const x = -170 + p * 36 + range(rng, -8, 8);
+    if (Math.abs(x + 36) < 8 || Math.abs(x) < 8 || Math.abs(x - 36) < 8) continue; // keep the piers clear
+    const palm = buildTreeMesh(rng, 'palm', textures.bark);
+    palm.position.set(x, 0, p % 2 === 0 ? 198 : 210);
+    scene.add(palm);
+    trees.push(palm);
+  }
+  for (const [px, pz] of [[142, -52], [142, -24], [142, 4], [150, -38]]) {
+    const palm = buildTreeMesh(rng, 'palm', textures.bark);
+    palm.position.set(px, 0, pz);
+    scene.add(palm);
+    trees.push(palm);
+  }
+
   // --- Parked cars: ten of them along the streets, one Comet GT and one
-  // Bay Cab among them. A parked car is a stealable car.
+  // Bay Cab among them. A parked car is a stealable car. Each car retries
+  // until its spot is clear of the plaza and the docks, so every type in
+  // the fleet — the Comet GT included — is really parked somewhere.
   const types = shuffled(rng, ['comet', 'cab', 'sedan', 'sedan', 'sedan', 'van', 'sedan', 'hauler', 'sedan', 'van']);
   const lines = [-144, -96, -48, 0, 48, 96, 144];
   for (let i = 0; i < CFG.parkedCars; i++) {
     const type = types[i % types.length];
-    const vertical = rng() < 0.5;
-    const line = pick(rng, lines);
-    const along = range(rng, -160, 160);
-    const side = pick(rng, [-1, 1]);
-    const x = vertical ? line + side * 4.2 : along;
-    const z = vertical ? along : line + side * 4.2;
-    if (Math.hypot(x, z) < 44) continue; // keep the plaza clear
-    if (z > 150) continue; // keep the docks clear
-    const heading = vertical ? (side > 0 ? Math.PI : 0) : (side > 0 ? Math.PI / 2 : -Math.PI / 2);
+    let x = 0;
+    let z = 0;
+    let heading = 0;
+    let placed = false;
+    for (let attempt = 0; attempt < 12 && !placed; attempt++) {
+      const vertical = rng() < 0.5;
+      const line = pick(rng, lines);
+      const along = range(rng, -160, 160);
+      const side = pick(rng, [-1, 1]);
+      x = vertical ? line + side * 4.2 : along;
+      z = vertical ? along : line + side * 4.2;
+      if (Math.hypot(x, z) < 44) continue; // keep the plaza clear
+      if (z > 150) continue; // keep the docks clear
+      heading = vertical ? (side > 0 ? Math.PI : 0) : (side > 0 ? Math.PI / 2 : -Math.PI / 2);
+      placed = true;
+    }
+    if (!placed) {
+      // Fallback: a quiet stretch of the west edge, far from the plaza.
+      x = -188;
+      z = -160 + i * 8;
+      heading = 0;
+    }
     const spec = CFG.cars[type];
     const mesh = buildCarMesh(spec.body, spec.color, type);
     mesh.position.set(x, 0, z);
@@ -216,6 +248,7 @@ export function buildCity(scene) {
   return {
     colliders,
     parkedCars,
+    trees,
     plaza: { x: 0, z: 0 },
     docks: { x: 0, z: 168 },
     marina: { x: 168, z: -24 },

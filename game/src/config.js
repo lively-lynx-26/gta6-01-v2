@@ -41,6 +41,9 @@ export const CFG = {
   trafficCars: 12, // civilian cars cruising the road lattice
   pedestrians: 26, // residents strolling the sidewalks
   pedWalkSpeed: [1.1, 1.6], // metres per second, strolling
+  pedStride: [0.45, 0.65], // leg swing amplitude, radians
+  pedGait: [0.9, 1.15], // walk-cycle speed factor
+  pedHeight: [0.93, 1.07], // figure height factor
   pedFleeSpeed: 4.6, // metres per second, running from gunfire
   pedFleeRadius: 35, // gunfire within this many metres makes peds flee
 

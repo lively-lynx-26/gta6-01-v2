@@ -112,8 +112,26 @@ export class Player {
     if (this.onFoot) {
       this.mesh.position.set(this.x, 0, this.z);
       this.mesh.rotation.y = this.heading;
-      // A gentle walk bob while moving.
-      this.mesh.position.y = Math.abs(Math.sin(this.walkPhase)) * 0.05;
+      // A gentle walk bob while moving, with the same walk cycle the
+      // residents use: legs and arms swing opposite, torso leans in.
+      if (this.speed > 0) {
+        this.mesh.position.y = Math.abs(Math.sin(this.walkPhase)) * 0.05;
+        const s = Math.sin(this.walkPhase) * 0.55;
+        const u = this.mesh.userData;
+        u.legL.rotation.x = s;
+        u.legR.rotation.x = -s;
+        u.armL.rotation.x = -s * 0.7;
+        u.armR.rotation.x = s * 0.7;
+        u.torso.rotation.x = 0.06;
+      } else {
+        const u = this.mesh.userData;
+        const k = 0.8;
+        u.legL.rotation.x *= k;
+        u.legR.rotation.x *= k;
+        u.armL.rotation.x *= k;
+        u.armR.rotation.x *= k;
+        u.torso.rotation.x *= k;
+      }
     } else if (this.car) {
       this.car.mesh.position.set(this.x, 0, this.z);
       this.car.mesh.rotation.y = this.carHeading;

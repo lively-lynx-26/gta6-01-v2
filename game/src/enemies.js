@@ -47,6 +47,7 @@ export class Enemies {
       state: 'alive', // alive | dead
       shootTimer: range(this.rng, 0.8, 1.6),
       strafePhase: range(this.rng, 0, Math.PI * 2),
+      walkPhase: range(this.rng, 0, Math.PI * 2),
       deadTimer: 0,
     };
     this.list.push(enemy);
@@ -88,6 +89,12 @@ export class Enemies {
       if (best.health <= 0) {
         best.state = 'dead';
         best.deadTimer = 4;
+        const u = best.mesh.userData;
+        u.legL.rotation.x = 0;
+        u.legR.rotation.x = 0;
+        u.armL.rotation.x = 0;
+        u.armR.rotation.x = 0;
+        u.torso.rotation.x = 0;
         best.mesh.rotation.x = -Math.PI / 2;
         best.mesh.position.y = 0.35;
       }
@@ -131,7 +138,8 @@ export class Enemies {
         e.shootTimer = Math.max(e.shootTimer - dt * 0.5, 0.4);
         continue;
       }
-      // Close in until shooting range, then strafe side to side.
+      // Close in until shooting range, then strafe side to side. Walking
+      // swings the legs and arms like any resident on the street.
       let moveX = 0;
       let moveZ = 0;
       if (dist > CFG.enemy.shootRange * 0.7) {
@@ -143,6 +151,17 @@ export class Enemies {
         const strafe = Math.sin(e.strafePhase) * 1.6 * dt;
         moveX = (-dz / dist) * strafe;
         moveZ = (dx / dist) * strafe;
+      }
+      const moved = Math.hypot(moveX, moveZ);
+      if (moved > 0) {
+        e.walkPhase += dt * 9;
+        const s = Math.sin(e.walkPhase) * 0.5;
+        const u = e.mesh.userData;
+        u.legL.rotation.x = s;
+        u.legR.rotation.x = -s;
+        u.armL.rotation.x = -s * 0.7;
+        u.armR.rotation.x = s * 0.7;
+        u.torso.rotation.x = 0.06;
       }
       e.x += moveX;
       e.z += moveZ;

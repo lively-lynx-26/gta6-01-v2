@@ -340,13 +340,18 @@ export function buildPersonMesh() {
   return buildPedestrianMesh({ shirt: 0x2e6f8e, pants: 0x2b2f38, skin: 0xc98e6b, hair: true });
 }
 
-// A resident (or a goon): the same rounded figure in different clothes.
-// `armed` adds a pistol in the right hand. Faces +z.
-export function buildPedestrianMesh({ shirt, pants, skin, hair = false, armed = false }) {
+// A resident (or a goon): a human figure with a head, torso, arms and legs
+// in varied heights and clothes, built to walk — every limb hangs from a
+// pivot at its joint, and the pivots are kept in userData so the walk cycle
+// can swing them. Faces +z. `hair` true means Dario's cap; `hairStyle`
+// picks one of 'cap' | 'short' | 'long' | 'bun' | 'none'. `armed` adds a
+// pistol in the right hand.
+export function buildPedestrianMesh({ shirt, pants, skin, hair = false, armed = false, height = 1, hairStyle = null }) {
   const group = new THREE.Group();
   const skinMat = std(skin, 0.7, 0);
   const shirtMat = std(shirt, 0.8, 0);
   const pantsMat = std(pants, 0.85, 0);
+  const shoeMat = std(0x1c1a18, 0.9, 0);
 
   const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.3, 0.72, 12), shirtMat);
   torso.position.y = 1.05;
@@ -354,24 +359,64 @@ export function buildPedestrianMesh({ shirt, pants, skin, hair = false, armed = 
   const head = new THREE.Mesh(new THREE.SphereGeometry(0.21, 16, 12), skinMat);
   head.position.y = 1.62;
   group.add(head);
-  if (hair) {
-    const hairCap = new THREE.Mesh(new THREE.SphereGeometry(0.215, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.55), std(0x1c1410, 0.9, 0));
-    hairCap.position.y = 1.65;
-    group.add(hairCap);
+
+  const style = hairStyle || (hair ? 'cap' : 'none');
+  const hairMat = std(0x1c1410, 0.9, 0);
+  if (style === 'cap' || style === 'short') {
+    const cap = new THREE.Mesh(new THREE.SphereGeometry(0.215, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.55), hairMat);
+    cap.position.y = 1.65;
+    if (style === 'short') cap.scale.y = 0.7;
+    group.add(cap);
+  } else if (style === 'long') {
+    const cap = new THREE.Mesh(new THREE.SphereGeometry(0.215, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.55), hairMat);
+    cap.position.y = 1.65;
+    group.add(cap);
+    // Hair down to the shoulders at the back.
+    const back = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.5, 0.1), hairMat);
+    back.position.set(0, 1.38, -0.18);
+    group.add(back);
+  } else if (style === 'bun') {
+    const cap = new THREE.Mesh(new THREE.SphereGeometry(0.215, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.55), hairMat);
+    cap.position.y = 1.65;
+    group.add(cap);
+    const bun = new THREE.Mesh(new THREE.SphereGeometry(0.09, 10, 8), hairMat);
+    bun.position.set(0, 1.78, -0.16);
+    group.add(bun);
   }
+
+  // Legs hang from hip pivots; arms from shoulder pivots. The cylinder
+  // sits below its pivot so rotating the pivot swings the limb.
+  const limbs = {};
   for (const side of [-1, 1]) {
+    const key = side < 0 ? 'L' : 'R';
+    const legPivot = new THREE.Group();
+    legPivot.position.set(side * 0.13, 0.68, 0);
     const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.11, 0.68, 8), pantsMat);
-    leg.position.set(side * 0.13, 0.34, 0);
-    group.add(leg);
+    leg.position.y = -0.34;
+    legPivot.add(leg);
+    const shoe = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.09, 0.3), shoeMat);
+    shoe.position.set(0, -0.66, 0.06);
+    legPivot.add(shoe);
+    group.add(legPivot);
+    limbs[`leg${key}`] = legPivot;
+    const armPivot = new THREE.Group();
+    armPivot.position.set(side * 0.34, 1.32, 0);
     const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.08, 0.6, 8), shirtMat);
-    arm.position.set(side * 0.34, 1.05, 0);
-    group.add(arm);
+    arm.position.y = -0.3;
+    armPivot.add(arm);
+    const hand = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), skinMat);
+    hand.position.y = -0.62;
+    armPivot.add(hand);
+    group.add(armPivot);
+    limbs[`arm${key}`] = armPivot;
   }
   if (armed) {
-    // A pistol held out in front, in the right hand.
-    const gun = box(0.07, 0.09, 0.34, std(0x14161a, 0.6, 0.4), 0.34, 0.82, 0.3);
-    group.add(gun);
+    // A pistol in the right hand, so it follows the arm's swing.
+    const gun = box(0.07, 0.09, 0.34, std(0x14161a, 0.6, 0.4), 0, -0.6, 0.2);
+    limbs.armR.add(gun);
   }
+  group.userData = { ...limbs, torso, head };
+  group.scale.setScalar(height);
   return group;
 }
 
@@ -470,20 +515,171 @@ export function buildBuildingMesh(width, height, depth, color, roofColor, facade
   return group;
 }
 
-// A street tree: a trunk and two rounded foliage spheres.
-export function buildTreeMesh() {
+// --- Realistic trees --------------------------------------------------------
+// A street tree is not a lollipop: a tapered trunk with bark, a few branches,
+// and a canopy of several foliage clusters of varied size and shade. Palms
+// get a curved trunk of stacked segments, a crown of drooping fronds and a
+// coconut cluster. Street trees sit in concrete planters. Geometries and
+// foliage materials are shared across every tree, so the extra detail costs
+// almost no memory; only positions, scales and rotations vary, all from the
+// seeded stream the caller passes in.
+
+const _trunkGeo = new THREE.CylinderGeometry(0.12, 0.24, 2.2, 8);
+const _branchGeo = new THREE.CylinderGeometry(0.04, 0.09, 1.1, 6);
+const _clusterGeo = new THREE.IcosahedronGeometry(1, 0);
+const _palmSegGeo = new THREE.CylinderGeometry(0.11, 0.14, 1.5, 8);
+_palmSegGeo.translate(0, 0.75, 0); // the segment's base is its origin, so
+// stacked segments join end to end without gaps
+const _coconutGeo = new THREE.SphereGeometry(0.14, 8, 6);
+const _planterGeo = new THREE.BoxGeometry(1.3, 0.55, 1.3);
+const _soilGeo = new THREE.BoxGeometry(1.15, 0.1, 1.15);
+const _foliageMats = [0x3f7d44, 0x4c9153, 0x2f6b35, 0x5da24f].map(
+  (c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.9, metalness: 0, flatShading: true }),
+);
+const _frondMat = new THREE.MeshStandardMaterial({
+  color: 0x3e8f46, roughness: 0.85, metalness: 0, flatShading: true, side: THREE.DoubleSide,
+});
+const _palmGreenMat = new THREE.MeshStandardMaterial({ color: 0x57a05a, roughness: 0.9, metalness: 0, flatShading: true });
+const _concreteMat = std(0x9aa0a3, 0.95, 0);
+const _soilMat = std(0x3d2b1d, 1, 0);
+const _coconutMat = std(0x6b4a2f, 0.9, 0);
+
+// A palm frond: a long pointed leaf blade, base at the origin, tip at +y.
+const _frondShape = new THREE.Shape();
+_frondShape.moveTo(0, 0);
+_frondShape.quadraticCurveTo(0.36, 0.7, 0.2, 1.5);
+_frondShape.quadraticCurveTo(0.09, 2.0, 0, 2.3);
+_frondShape.quadraticCurveTo(-0.09, 2.0, -0.2, 1.5);
+_frondShape.quadraticCurveTo(-0.36, 0.7, 0, 0);
+const _frondGeo = new THREE.ExtrudeGeometry(_frondShape, { depth: 0.02, bevelEnabled: false, curveSegments: 6 });
+
+// One bark material per texture object, cached: every tree shares the one
+// bark texture the city builds, so this stays a single material.
+const _barkMats = new Map();
+function barkMaterial(barkTex) {
+  if (!barkTex) return std(0x6b4a2f, 0.95, 0);
+  if (!_barkMats.has(barkTex)) {
+    _barkMats.set(barkTex, new THREE.MeshStandardMaterial({ map: barkTex, roughness: 0.95, metalness: 0 }));
+  }
+  return _barkMats.get(barkTex);
+}
+
+function pickGreen(rng) {
+  return _foliageMats[Math.floor(rng() * _foliageMats.length)];
+}
+
+// A broadleaf shade tree: tapered bark trunk, branches, and a canopy of
+// several clusters. `scale` sizes the whole tree; `clusters` counts the
+// canopy blobs. Returns the group, trunk base at the origin.
+function shadeTree(rng, barkMat, scale, clusters) {
   const group = new THREE.Group();
-  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.2, 1.6, 8), std(0x6b4a2f, 0.95, 0));
-  trunk.position.y = 0.8;
+  const trunk = new THREE.Mesh(_trunkGeo, barkMat);
+  trunk.position.y = 1.1;
+  trunk.rotation.z = (rng() - 0.5) * 0.08; // a trunk is never perfectly straight
   group.add(trunk);
-  const leaves = std(0x3f7d44, 0.9, 0);
-  const low = new THREE.Mesh(new THREE.SphereGeometry(1.15, 12, 10), leaves);
-  low.position.y = 2.2;
-  low.scale.y = 0.85;
-  group.add(low);
-  const high = new THREE.Mesh(new THREE.SphereGeometry(0.8, 12, 10), std(0x4c9153, 0.9, 0));
-  high.position.set(0.3, 3.1, 0.2);
-  group.add(high);
+  const branchCount = 2 + Math.floor(rng() * 2);
+  for (let b = 0; b < branchCount; b++) {
+    const branch = new THREE.Mesh(_branchGeo, barkMat);
+    const angle = (b / branchCount) * Math.PI * 2 + rng() * 0.8;
+    branch.position.set(Math.cos(angle) * 0.25, 2.1, Math.sin(angle) * 0.25);
+    branch.rotation.set(Math.sin(angle) * 0.9, 0, Math.cos(angle) * 0.9);
+    group.add(branch);
+  }
+  // The canopy: one crown cluster on top, the rest spread around it, each
+  // a different size and shade so the silhouette is lumpy, not a ball.
+  const crownY = 2.9;
+  for (let i = 0; i < clusters; i++) {
+    const blob = new THREE.Mesh(_clusterGeo, pickGreen(rng));
+    const r = 0.55 + rng() * 0.5;
+    const a = rng() * Math.PI * 2;
+    const rad = i === 0 ? 0 : 0.55 + rng() * 0.45;
+    blob.position.set(Math.cos(a) * rad, crownY + (i === 0 ? 0.45 : (rng() - 0.5) * 0.8), Math.sin(a) * rad);
+    blob.scale.set(r, r * (0.75 + rng() * 0.2), r);
+    blob.rotation.set(rng() * 3, rng() * 3, rng() * 3);
+    group.add(blob);
+  }
+  group.scale.setScalar(scale);
+  group.rotation.y = rng() * Math.PI * 2;
+  return group;
+}
+
+// A palm: a trunk of stacked segments that curves as it rises, a crown of
+// drooping fronds and a coconut cluster underneath. Each segment starts
+// where the last one ends (stepped back a little along the next segment's
+// axis so the joints overlap), so the curve has no gaps.
+function palmTree(rng, barkMat) {
+  const group = new THREE.Group();
+  let bx = 0;
+  let by = 0;
+  let angle = 0;
+  let topX = 0;
+  let topY = 0;
+  for (let s = 0; s < 4; s++) {
+    const seg = new THREE.Mesh(_palmSegGeo, barkMat);
+    seg.position.set(bx, by, 0);
+    seg.rotation.z = angle;
+    group.add(seg);
+    topX = bx - 1.5 * Math.sin(angle);
+    topY = by + 1.5 * Math.cos(angle);
+    const nextAngle = angle - 0.09;
+    bx = topX + 0.3 * Math.sin(nextAngle);
+    by = topY - 0.3 * Math.cos(nextAngle);
+    angle = nextAngle;
+  }
+  const crown = new THREE.Group();
+  crown.position.set(topX, topY - 0.1, 0);
+  const fronds = 8;
+  for (let f = 0; f < fronds; f++) {
+    const pivot = new THREE.Group();
+    pivot.rotation.y = (f / fronds) * Math.PI * 2 + rng() * 0.3;
+    const frond = new THREE.Mesh(_frondGeo, f % 2 === 0 ? _frondMat : _palmGreenMat);
+    frond.rotation.x = 1.85 + rng() * 0.35; // arch out and droop
+    pivot.add(frond);
+    crown.add(pivot);
+  }
+  // A second, shorter ring of fronds standing more upright fills the crown.
+  for (let f = 0; f < 4; f++) {
+    const pivot = new THREE.Group();
+    pivot.rotation.y = (f / 4) * Math.PI * 2 + 0.4 + rng() * 0.3;
+    const frond = new THREE.Mesh(_frondGeo, _palmGreenMat);
+    frond.scale.setScalar(0.65);
+    frond.rotation.x = 1.25 + rng() * 0.25;
+    pivot.add(frond);
+    crown.add(pivot);
+  }
+  for (let c = 0; c < 3; c++) {
+    const nut = new THREE.Mesh(_coconutGeo, _coconutMat);
+    nut.position.set((rng() - 0.5) * 0.4, -0.25, (rng() - 0.5) * 0.4);
+    crown.add(nut);
+  }
+  group.add(crown);
+  group.rotation.y = rng() * Math.PI * 2;
+  return group;
+}
+
+// A tree. `kind` is 'shade' (broadleaf), 'palm' (beach and Marina) or
+// 'planter' (a small shade tree in a concrete planter box on the sidewalk).
+// `rng` is the caller's seeded stream; `barkTex` the city's bark texture.
+export function buildTreeMesh(rng, kind = 'shade', barkTex = null) {
+  const barkMat = barkMaterial(barkTex);
+  let group;
+  if (kind === 'palm') group = palmTree(rng, barkMat);
+  else if (kind === 'planter') {
+    group = new THREE.Group();
+    const planter = new THREE.Mesh(_planterGeo, _concreteMat);
+    planter.position.y = 0.275;
+    group.add(planter);
+    const soil = new THREE.Mesh(_soilGeo, _soilMat);
+    soil.position.y = 0.55;
+    group.add(soil);
+    const tree = shadeTree(rng, barkMat, 0.55 + rng() * 0.15, 4);
+    tree.position.y = 0.55;
+    group.add(tree);
+    group.rotation.y = rng() * Math.PI * 2;
+  } else {
+    group = shadeTree(rng, barkMat, 0.9 + rng() * 0.45, 5 + Math.floor(rng() * 3));
+  }
+  group.userData.kind = kind;
   return group;
 }
 

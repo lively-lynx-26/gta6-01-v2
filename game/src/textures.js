@@ -175,6 +175,29 @@ export function makeFacade(rng, baseColor) {
   return textureFrom(c, 1, 1);
 }
 
+// Tree bark: warm brown with vertical darker fissures and lighter ridges,
+// so a trunk reads as bark instead of a flat brown tube.
+function makeBark(rng) {
+  const [c, ctx] = canvas(128, 128);
+  ctx.fillStyle = '#6b4a2f';
+  ctx.fillRect(0, 0, 128, 128);
+  for (let i = 0; i < 46; i++) {
+    const x = rng() * 128;
+    ctx.strokeStyle = rng() < 0.55 ? 'rgba(52, 32, 18, 0.6)' : 'rgba(146, 104, 62, 0.55)';
+    ctx.lineWidth = range(rng, 1, 3.4);
+    ctx.beginPath();
+    ctx.moveTo(x, -4);
+    let xx = x;
+    for (let y = 0; y <= 128; y += 16) {
+      xx += range(rng, -4, 4);
+      ctx.lineTo(xx, y);
+    }
+    ctx.stroke();
+  }
+  speckle(ctx, rng, 128, 128, 300, ['#7d5a3a', '#54371f', '#8a6a44'], 2);
+  return textureFrom(c, 1, 2);
+}
+
 // A dashed centre line for the streets: a pale dash on transparency,
 // repeated along the road. The dash runs along the canvas's width, which
 // the street strips map to the road's length.
@@ -205,6 +228,7 @@ export function buildTextures(seed) {
     sidewalk: makeSidewalk(rng),
     sand: makeSand(rng),
     grass: makeGrass(rng),
+    bark: makeBark(rng),
     facades,
     laneDash: makeLaneDash(),
   };

@@ -8,7 +8,7 @@
 import * as THREE from 'three';
 import { CFG } from './config.js';
 import { makeRng, range, int, pick, shuffled } from './random.js';
-import { buildBuildingMesh, buildCarMesh, buildFountainMesh, buildTreeMesh } from './models.js';
+import { buildBuildingMesh, buildBikeMesh, buildCarMesh, buildFountainMesh, buildTreeMesh } from './models.js';
 import { buildTextures } from './textures.js';
 import { makeWaterMaterial } from './shaders.js';
 import { resolveCircle, clampToBounds } from './physics.js';
@@ -88,11 +88,11 @@ export function buildCity(scene) {
   }
 
   // --- Ground: one asphalt sheet for the whole city, then raised concrete
-  // pads for each block, sand for the beach and water for the ocean.
-  const ground = new THREE.Mesh(
-    new THREE.PlaneGeometry(900, 900),
-    new THREE.MeshStandardMaterial({ map: textures.asphalt, roughness: 0.95, metalness: 0 }),
-  );
+  // pads for each block, sand for the beach and water for the ocean. The
+  // ground material is kept so the weather can darken and slick it when
+  // it rains.
+  const groundMat = new THREE.MeshStandardMaterial({ map: textures.asphalt, roughness: 0.95, metalness: 0 });
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(900, 900), groundMat);
   ground.rotation.x = -Math.PI / 2;
   ground.position.y = 0;
   scene.add(ground);
@@ -181,7 +181,8 @@ export function buildCity(scene) {
         const mesh = buildBuildingMesh(w, h, d, pick(rng, CFG.buildingColors), pick(rng, CFG.roofColors), pick(rng, textures.facades));
         mesh.position.set(x, 0.3, z);
         scene.add(mesh);
-        colliders.push({ minX: x - w / 2 - 0.4, maxX: x + w / 2 + 0.4, minZ: z - d / 2 - 0.4, maxZ: z + d / 2 + 0.4 });
+        // The height rides along so the helicopter knows where the roofs are.
+        colliders.push({ minX: x - w / 2 - 0.4, maxX: x + w / 2 + 0.4, minZ: z - d / 2 - 0.4, maxZ: z + d / 2 + 0.4, h });
       }
     }
   }
@@ -193,7 +194,7 @@ export function buildCity(scene) {
   const fountain = buildFountainMesh(water);
   fountain.position.set(0, 0.3, 0);
   scene.add(fountain);
-  colliders.push({ minX: -4.6, maxX: 4.6, minZ: -4.6, maxZ: 4.6 });
+  colliders.push({ minX: -4.6, maxX: 4.6, minZ: -4.6, maxZ: 4.6, h: 3.5 });
   for (let t = 0; t < 10; t++) {
     const angle = (t / 10) * Math.PI * 2;
     const tree = buildTreeMesh(rng, 'shade', textures.bark);
@@ -206,14 +207,14 @@ export function buildCity(scene) {
     const warehouse = buildBuildingMesh(30, 9, 20, 0xb09a7a, 0x6f7d8c, pick(rng, textures.facades));
     warehouse.position.set(wx, 0.3, 168);
     scene.add(warehouse);
-    colliders.push({ minX: wx - 15.4, maxX: wx + 15.4, minZ: 158, maxZ: 178.4 });
+    colliders.push({ minX: wx - 15.4, maxX: wx + 15.4, minZ: 158, maxZ: 178.4, h: 9 });
   }
   for (const px of [-36, 0, 36]) {
     const pier = new THREE.Mesh(new THREE.BoxGeometry(6, 0.6, 44), flat(0x8a6f4d));
     pier.position.set(px, 0.3, 214);
     scene.add(pier);
     // Piers are raised walkways: cars and people stay off them.
-    colliders.push({ minX: px - 3, maxX: px + 3, minZ: 192, maxZ: 236 });
+    colliders.push({ minX: px - 3, maxX: px + 3, minZ: 192, maxZ: 236, h: 0.6 });
   }
 
   // --- Street trees in planters along the sidewalks.
@@ -299,6 +300,22 @@ export function buildCity(scene) {
     parkedCars.push({ type: spot.type, spec, x: spot.x, z: spot.z, heading: spot.heading, mesh, taken: false });
   }
 
+  // Two bikes parked on the streets: the Nebula R sport bike east of the
+  // plaza, the Ironhog cruiser on Sunset Row. They are parked cars, so
+  // the player steals them with E like any other ride.
+  const bikeSpots = [
+    { type: 'sportbike', x: 52.2, z: -24, heading: Math.PI },
+    { type: 'cruiser', x: 144, z: 100.2, heading: Math.PI / 2 },
+  ];
+  for (const spot of bikeSpots) {
+    const spec = CFG.cars[spot.type];
+    const mesh = buildBikeMesh(spot.type, spec.color);
+    mesh.position.set(spot.x, 0, spot.z);
+    mesh.rotation.y = spot.heading;
+    scene.add(mesh);
+    parkedCars.push({ type: spot.type, spec, x: spot.x, z: spot.z, heading: spot.heading, mesh, taken: false });
+  }
+
   return {
     colliders,
     parkedCars,
@@ -307,5 +324,6 @@ export function buildCity(scene) {
     docks: { x: 0, z: 168 },
     marina: { x: 168, z: -24 },
     water, // the shared water shader material; the main loop animates it
+    groundMat, // the asphalt material; the weather darkens it when it rains
   };
 }

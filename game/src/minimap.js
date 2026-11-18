@@ -112,6 +112,27 @@ export class Minimap {
       ctx.fill();
     }
 
+    // Boats: light-blue dots on the water. The helipad: a yellow H on
+    // the beach by the Marina.
+    if (state.vehicles) {
+      ctx.fillStyle = 'rgba(127, 212, 255, 0.9)';
+      for (const boat of state.vehicles.boats) {
+        ctx.beginPath();
+        ctx.arc(this._x(boat.x), this._y(boat.z), 2.2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      const hx = this._x(150);
+      const hy = this._y(204);
+      ctx.fillStyle = '#ffc93e';
+      ctx.beginPath();
+      ctx.arc(hx, hy, 4.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#101820';
+      ctx.font = 'bold 7px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('H', hx, hy + 2.5);
+    }
+
     // Police cruisers: flashing red and blue, like their light bars.
     const flashRed = Math.sin(state.time * 11) > 0;
     ctx.fillStyle = flashRed ? '#ff3333' : '#3388ff';

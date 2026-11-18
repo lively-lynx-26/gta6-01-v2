@@ -123,23 +123,26 @@ export function carAhead(cars, self, maxDist) {
 // `spec` is a CFG.cars entry; throttle is -1..1 (reverse..forward) and
 // steer is -1..1 (left..right). The car accelerates, drags, steers less at
 // high speed, slides around building boxes (losing speed on a hard hit),
-// and stays inside the playable bounds. Returns the impact speed when a
-// building was hit, else 0.
-export function stepCar(car, spec, throttle, steer, dt, colliders) {
+// and stays inside the playable bounds. `grip` (1 = dry, lower = wet)
+// scales acceleration and steering authority, so rain makes the car
+// slide. Returns the impact speed when a building was hit, else 0.
+export function stepCar(car, spec, throttle, steer, dt, colliders, grip = 1) {
   const before = car.speed;
+  const accel = spec.accel * (0.55 + 0.45 * grip);
   if (throttle > 0) {
-    car.speed += spec.accel * throttle * dt;
+    car.speed += accel * throttle * dt;
   } else if (throttle < 0) {
-    if (car.speed > 0.5) car.speed -= spec.accel * 1.6 * -throttle * dt; // brake
-    else car.speed -= spec.accel * 0.55 * -throttle * dt; // reverse
+    if (car.speed > 0.5) car.speed -= accel * 1.6 * -throttle * dt; // brake
+    else car.speed -= accel * 0.55 * -throttle * dt; // reverse
   }
   car.speed -= car.speed * 0.55 * dt; // drag and rolling resistance
   if (car.speed > spec.maxSpeed) car.speed = spec.maxSpeed;
   if (car.speed < -spec.reverseSpeed) car.speed = -spec.reverseSpeed;
   if (Math.abs(car.speed) < 0.08 && throttle === 0) car.speed = 0;
 
-  // Steering: sharper at low speed, steadier at high speed.
-  const steerAuthority = 1 / (1 + Math.abs(car.speed) * 0.045);
+  // Steering: sharper at low speed, steadier at high speed, weaker when
+  // the road is wet.
+  const steerAuthority = (1 / (1 + Math.abs(car.speed) * 0.045)) * (0.6 + 0.4 * grip);
   const turnRate = spec.turn * steerAuthority * (car.speed >= 0 ? 1 : -1);
   car.heading += -steer * turnRate * dt * Math.min(1, Math.abs(car.speed) / 4 + 0.25);
 
@@ -162,4 +165,163 @@ export function stepCar(car, spec, throttle, steer, dt, colliders) {
     car.z = clampedZ;
   }
   return impact;
+}
+
+// One step of the bike model. A bike is the same bicycle model as a car,
+// but it accelerates harder, steers sharper, leans into turns, and gets
+// twitchy at high speed: above ~70% of top speed the steering wobbles a
+// little, so holding a straight line at full throttle takes work. Returns
+// { impact, lean } — lean is the visual roll in radians (negative leans
+// left into a left turn), used by the mesh.
+export function stepBike(bike, spec, throttle, steer, dt, colliders, grip = 1) {
+  const before = bike.speed;
+  const accel = spec.accel * (0.55 + 0.45 * grip);
+  if (throttle > 0) {
+    bike.speed += accel * throttle * dt;
+  } else if (throttle < 0) {
+    if (bike.speed > 0.5) bike.speed -= accel * 1.6 * -throttle * dt;
+    else bike.speed -= accel * 0.55 * -throttle * dt;
+  }
+  bike.speed -= bike.speed * 0.5 * dt;
+  if (bike.speed > spec.maxSpeed) bike.speed = spec.maxSpeed;
+  if (bike.speed < -spec.reverseSpeed) bike.speed = -spec.reverseSpeed;
+  if (Math.abs(bike.speed) < 0.08 && throttle === 0) bike.speed = 0;
+
+  // Sharper steering than a car, and a high-speed wobble: the heading
+  // drifts a little side to side when the bike is flat out. The wobble
+  // is a sine of the distance travelled, so it is deterministic.
+  const steerAuthority = (1 / (1 + Math.abs(bike.speed) * 0.03)) * (0.6 + 0.4 * grip);
+  const turnRate = spec.turn * steerAuthority * (bike.speed >= 0 ? 1 : -1);
+  bike.heading += -steer * turnRate * dt * Math.min(1, Math.abs(bike.speed) / 4 + 0.25);
+  const speedFrac = Math.abs(bike.speed) / spec.maxSpeed;
+  if (speedFrac > 0.7) {
+    const wobble = (speedFrac - 0.7) * 0.9 * Math.sin((bike.x + bike.z) * 0.35);
+    bike.heading += wobble * dt;
+  }
+  // Lean: proportional to the steering input and the speed, up to ~0.5 rad.
+  const lean = -steer * 0.5 * Math.min(1, Math.abs(bike.speed) / 18) * (bike.speed >= 0 ? 1 : -1);
+
+  bike.x += Math.sin(bike.heading) * bike.speed * dt;
+  bike.z += Math.cos(bike.heading) * bike.speed * dt;
+
+  let impact = 0;
+  const fixed = resolveCircle(colliders, bike.x, bike.z, CFG.bikeRadius);
+  if (fixed.hit) {
+    impact = Math.abs(before);
+    bike.speed *= 0.3;
+    bike.x = fixed.x;
+    bike.z = fixed.z;
+  }
+  const clampedX = Math.max(-200, Math.min(200, bike.x));
+  const clampedZ = Math.max(-200, Math.min(214, bike.z));
+  if (clampedX !== bike.x || clampedZ !== bike.z) {
+    bike.speed *= 0.5;
+    bike.x = clampedX;
+    bike.z = clampedZ;
+  }
+  return { impact, lean };
+}
+
+// Water a boat may sail in: the Marina basin, or the open ocean south of
+// the beach. A boat stays in its own water.
+export const WATER = {
+  marina: { x0: 148, x1: 192, z0: -61, z1: 13 },
+  ocean: { x0: -200, x1: 200, z0: 200, z1: 400 },
+};
+
+// True when a point is over open water (the Marina basin or the ocean).
+export function isWater(x, z) {
+  if (z >= 216) return true;
+  return x >= 147 && x <= 193 && z >= -62 && z <= 14;
+}
+
+// One step of the boat model. Boats have no brakes and no buildings to
+// hit: they accelerate, drag through the water, turn more slowly than a
+// car, and drift a little sideways in a turn. `water` is the WATER rect
+// the boat belongs to; a boat that reaches the edge of its water slows
+// to a stop instead of beaching itself.
+export function stepBoat(boat, spec, throttle, steer, dt, water) {
+  if (throttle > 0) {
+    boat.speed += spec.accel * throttle * dt;
+  } else if (throttle < 0) {
+    if (boat.speed > 0.5) boat.speed -= spec.accel * 1.4 * -throttle * dt;
+    else boat.speed -= spec.accel * 0.5 * -throttle * dt;
+  }
+  boat.speed -= boat.speed * 0.85 * dt; // water drag is heavy
+  if (boat.speed > spec.maxSpeed) boat.speed = spec.maxSpeed;
+  if (boat.speed < -spec.reverseSpeed) boat.speed = -spec.reverseSpeed;
+  if (Math.abs(boat.speed) < 0.08 && throttle === 0) boat.speed = 0;
+
+  const steerAuthority = 1 / (1 + Math.abs(boat.speed) * 0.03);
+  const turnRate = spec.turn * steerAuthority * (boat.speed >= 0 ? 1 : -1);
+  boat.heading += -steer * turnRate * dt * Math.min(1, Math.abs(boat.speed) / 4 + 0.25);
+
+  boat.x += Math.sin(boat.heading) * boat.speed * dt;
+  boat.z += Math.cos(boat.heading) * boat.speed * dt;
+
+  // The water's edge: stop at the shore instead of driving onto land.
+  const cx = Math.max(water.x0, Math.min(water.x1, boat.x));
+  const cz = Math.max(water.z0, Math.min(water.z1, boat.z));
+  if (cx !== boat.x || cz !== boat.z) {
+    boat.speed *= 0.4;
+    boat.x = cx;
+    boat.z = cz;
+  }
+}
+
+// One step of the flyable helicopter. `heli` carries x, z, y (altitude),
+// heading, vx, vz and vy. W/S flies forward and back along the heading,
+// A/D yaws, Shift climbs and Space descends. The helicopter drifts with
+// momentum, drags in the air, cannot leave the city, cannot land on
+// water (it holds at 2 m over water), and cannot descend through a
+// building: over a building its floor is the roof plus a margin.
+// `colliders` carry `h` (building height) where known. Returns nothing.
+export function stepHeli(heli, spec, forward, yaw, climb, dt, colliders) {
+  const fx = Math.sin(heli.heading);
+  const fz = Math.cos(heli.heading);
+  // Forward / back thrust along the heading.
+  heli.vx += fx * forward * spec.accel * dt;
+  heli.vz += fz * forward * spec.accel * dt;
+  // Vertical thrust.
+  heli.vy += climb * spec.climbSpeed * dt * 0.9;
+  // Air drag on every axis, plus gravity settling the hover.
+  heli.vx -= heli.vx * 0.9 * dt;
+  heli.vz -= heli.vz * 0.9 * dt;
+  heli.vy -= heli.vy * 1.6 * dt;
+  heli.vy -= 1.2 * dt; // a helicopter sinks gently without power
+  // Yaw.
+  heli.heading += -yaw * spec.turn * 0.55 * dt;
+  // Cap the horizontal speed.
+  const hSpeed = Math.hypot(heli.vx, heli.vz);
+  if (hSpeed > spec.maxSpeed) {
+    heli.vx *= spec.maxSpeed / hSpeed;
+    heli.vz *= spec.maxSpeed / hSpeed;
+  }
+  if (heli.vy > spec.climbSpeed) heli.vy = spec.climbSpeed;
+  if (heli.vy < -spec.climbSpeed) heli.vy = -spec.climbSpeed;
+
+  heli.x += heli.vx * dt;
+  heli.z += heli.vz * dt;
+  heli.y += heli.vy * dt;
+
+  // Stay over the city and the beach, under the ceiling.
+  heli.x = Math.max(-200, Math.min(200, heli.x));
+  heli.z = Math.max(-200, Math.min(214, heli.z));
+  if (heli.y > spec.ceiling) {
+    heli.y = spec.ceiling;
+    heli.vy = Math.min(0, heli.vy);
+  }
+  // The floor: the ground, a roof plus a margin when over a building,
+  // or 2 m over water. Landing is a soft touch: kill the descent.
+  let floor = 0;
+  if (isWater(heli.x, heli.z)) floor = 2;
+  for (const b of colliders) {
+    if (b.h && heli.x >= b.minX && heli.x <= b.maxX && heli.z >= b.minZ && heli.z <= b.maxZ) {
+      floor = Math.max(floor, b.h + 1.5);
+    }
+  }
+  if (heli.y <= floor) {
+    heli.y = floor;
+    if (heli.vy < 0) heli.vy = 0;
+  }
 }

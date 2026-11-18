@@ -29,6 +29,8 @@ import { CityMap } from './map.js';
 import { Popups } from './popups.js';
 import { repTier, repProgress } from './rep.js';
 import { districtAt } from './districts.js';
+import { Vehicles } from './vehicles.js';
+import { Weather } from './weather.js';
 
 const params = new URLSearchParams(window.location.search);
 const shotName = params.get('shot');
@@ -151,6 +153,18 @@ const side = new SideActivities(scene, city, player);
 const cityMap = new CityMap(el('map-overlay'));
 const popups = new Popups(el('hud-popups'));
 const muzzle = new MuzzleFlash(scene);
+// Boats, the flyable helicopter and the helipad; the day/night cycle
+// and the weather. The player learns about the vehicles here.
+const vehicles = new Vehicles(scene, city, player);
+player.vehicles = vehicles;
+const weather = new Weather({ scene, skyMat, sun, hemi, clouds, groundMat: city.groundMat });
+
+// The player's headlight: one spotlight that follows the car or bike
+// after dark, so night driving reads.
+const headlight = new THREE.SpotLight(0xfff2b0, 0, 45, 0.55, 0.5, 1);
+headlight.target = new THREE.Object3D();
+scene.add(headlight);
+scene.add(headlight.target);
 
 // The clock: Friday 17:24 at the start, one game minute per real second.
 let gameMinutes = CFG.clock.startMinutes;
@@ -297,10 +311,10 @@ function drawGauge() {
   c.fillStyle = '#eef4f6';
   c.font = 'bold 20px system-ui, sans-serif';
   c.textAlign = 'center';
-  c.fillText(gear === 0 ? 'N' : `G${gear}`, cx, cy + 8);
+  c.fillText(typeof gear === 'string' ? gear : (gear === 0 ? 'N' : `G${gear}`), cx, cy + 8);
   c.font = '9px system-ui, sans-serif';
   c.fillStyle = 'rgba(238, 244, 246, 0.75)';
-  c.fillText('GEAR', cx, cy + 22);
+  c.fillText(player.flying ? 'ALT' : 'GEAR', cx, cy + 22);
 }
 
 function showHud() {
@@ -336,6 +350,7 @@ function updateHud() {
   el('hud-cash').textContent = `$${player.cash.toLocaleString('en-US')}`;
   el('hud-stars').textContent = '★'.repeat(player.stars) + '☆'.repeat(5 - player.stars);
   el('hud-clock').textContent = formatClock(gameMinutes);
+  el('hud-weather').textContent = weather.label();
   el('hud-radio').textContent = `♪ ${radio.label()}`;
   // REP: the tier name and the progress to the next tier.
   const tier = repTier(player.rep);
@@ -371,6 +386,7 @@ function updateHud() {
     player,
     traffic,
     police,
+    vehicles,
     waypoint: missions.waypoint,
     time: skyTime,
   });
@@ -495,11 +511,23 @@ const desiredPos = new THREE.Vector3();
 function updateCamera(dt, instant = false) {
   const px = player.x;
   const pz = player.z;
-  const dist = player.onFoot ? CFG.camera.footDistance : CFG.camera.carDistance;
-  const height = player.onFoot ? CFG.camera.footHeight : CFG.camera.carHeight;
+  // In the air the camera pulls back and up, and looks at the helicopter
+  // itself. While AIR-1 is overhead the camera tilts up a little, rides
+  // a little higher, and widens its field of view, so the helicopter's
+  // low orbit reads in the frame with the car still in it. The nudge is
+  // deliberately small: a bigger tilt would push the car out of the
+  // bottom of the frame.
+  const heliUp = helicopter.active ? 1 : 0;
+  const dist = player.flying ? 16 : player.onFoot ? CFG.camera.footDistance : CFG.camera.carDistance;
+  const height = (player.flying ? 8 : player.onFoot ? CFG.camera.footHeight : CFG.camera.carHeight) + heliUp * 1;
+  const targetFov = helicopter.active ? 68 : 62;
+  if (Math.abs(camera.fov - targetFov) > 0.01) {
+    camera.fov += (targetFov - camera.fov) * Math.min(1, dt * 3);
+    camera.updateProjectionMatrix();
+  }
   // Ease the camera behind the player's heading while moving.
   if (state === 'playing') {
-    const moving = player.onFoot ? player.speed > 0.5 : Math.abs(player.carSpeed) > 1;
+    const moving = player.onFoot ? player.speed > 0.5 : player.flying ? true : Math.abs(player.carSpeed) > 1;
     if (moving) {
       let target = player.heading + Math.PI;
       let d = (target - cameraYaw) % (Math.PI * 2);
@@ -518,7 +546,7 @@ function updateCamera(dt, instant = false) {
     camPos.lerp(desiredPos, Math.min(1, dt * CFG.camera.lerp));
   }
   camera.position.copy(camPos);
-  camTarget.set(px, 1.4, pz);
+  camTarget.set(px, (player.flying ? player.altitude : 0) + 1.4 + heliUp * 3, pz);
   camera.lookAt(camTarget);
   // Mouse drag orbits the camera.
   const mouse = input.takeMouse();
@@ -605,7 +633,7 @@ function applyShot() {
     }
   }
   // The foot shot shows the fight: two goons ahead of Dario, one straight
-  // in the line of fire. The drive shot shows a fare waiting at the curb.
+  // in the line of fire.
   if (shotName === 'foot') {
     const fx = Math.sin(shot.heading);
     const fz = Math.cos(shot.heading);
@@ -614,18 +642,13 @@ function applyShot() {
     enemies.spawn(shot.x + fx * 10, shot.z + fz * 10);
     enemies.spawn(shot.x + fx * 12 - rx * 4, shot.z + fz * 12 - rz * 4);
   }
-  if (shotName === 'drive') {
-    const fx = Math.sin(shot.heading);
-    const fz = Math.cos(shot.heading);
-    side.spawnFareAt(shot.x + fx * 22 + 8, shot.z + fz * 22, 140, -24);
-  }
   if (shotName === 'map') {
     // The map screen over the city, with a representative mid-game state.
     side.restoreShells(3);
     player.carsStolen = 5;
     player.copsLost = 2;
     cityMap.draw({
-      player, traffic, police, missions, side,
+      player, traffic, police, missions, side, vehicles,
       carsStolen: player.carsStolen, copsLost: player.copsLost,
       safehouse: false, time: skyTime,
     });
@@ -695,9 +718,14 @@ function loop() {
 
   if (state === 'playing') {
     skyTime += dt;
-    gameMinutes += dt; // one game minute per real second
+    gameMinutes += dt * CFG.clock.rate; // about one game-hour per two real minutes
     animateSky(skyTime);
     animateWater(city.water, skyTime);
+    // The sky and the weather move with the clock; the rain sets the
+    // grip for the player and the traffic before either of them drives.
+    weather.update(dt, player.x, player.z, gameMinutes);
+    player.gripFactor = weather.gripFactor;
+    traffic.gripFactor = weather.gripFactor;
     // N mutes; M opens the full city map; V switches the radio station.
     if (input.consume('KeyN')) audio.setMuted(!audio.muted);
     if (input.consume('KeyV')) radio.next();
@@ -705,7 +733,7 @@ function loop() {
       state = 'map';
       cityMap.open();
       cityMap.draw({
-        player, traffic, police, missions, side,
+        player, traffic, police, missions, side, vehicles,
         carsStolen: player.carsStolen, copsLost: player.copsLost,
         safehouse: player.safehouse, time: skyTime,
       });
@@ -720,6 +748,7 @@ function loop() {
     const wasOnFoot = player.onFoot;
     player.update(dt, input, cameraYaw, world);
     if (player.onFoot !== wasOnFoot) audio.door();
+    vehicles.update(dt);
     damageSmoke.update(dt, player.car, player.carHealth);
     muzzle.update(dt);
     missions.update(dt);
@@ -730,9 +759,20 @@ function loop() {
     pedestrians.update(dt);
     police.update(dt);
     enemies.update(dt, player, (dist) => audio.gunshot(Math.max(0.15, 1 - dist / 60)));
-    // The helicopter flies at four stars and up, and in mission 3.
+    // The helicopter flies at four stars and up, and in mission 3. It
+    // gets the building heights so its low orbit clears the roofs.
     const heliActive = player.stars >= CFG.helicopter.minStars || missions.index === 2;
-    helicopter.update(dt, player, heliActive);
+    helicopter.update(dt, player, heliActive, city.colliders);
+    // The headlight follows the car or bike after dark.
+    if (!player.onFoot && weather.darkness > 0.35) {
+      headlight.intensity = weather.darkness * 80;
+      headlight.position.set(player.x, 1.2, player.z);
+      const fx = Math.sin(player.carHeading);
+      const fz = Math.cos(player.carHeading);
+      headlight.target.position.set(player.x + fx * 25, 0.5, player.z + fz * 25);
+    } else {
+      headlight.intensity = 0;
+    }
     side.update(dt, missions.index);
     radio.update(dt, audio);
     dialogue.update(dt);
@@ -789,13 +829,17 @@ function loop() {
     } else {
       safehouseSaved = false;
     }
+    // The driven speed, whatever the vehicle: car, bike, boat or heli.
+    const drivenSpeed = player.flying && player.heli
+      ? Math.hypot(player.heli.vx, player.heli.vz)
+      : player.boat ? Math.abs(player.boatSpeed) : Math.abs(player.carSpeed);
     audio.update({
-      driving: !player.onFoot && Math.abs(player.carSpeed) > 0.5,
-      speed01: player.onFoot ? player.speed / CFG.walkSpeed : Math.abs(player.carSpeed) / 55,
+      driving: !player.onFoot && drivenSpeed > 0.5,
+      speed01: player.onFoot ? player.speed / CFG.walkSpeed : drivenSpeed / 55,
       sirenDistance: police.nearestCruiserDistance(),
       // Skid: handbrake on at speed, louder the faster the car goes.
-      skid: !player.onFoot && input.down('Space') && Math.abs(player.carSpeed) > 10
-        ? Math.min(1, Math.abs(player.carSpeed) / 30) : 0,
+      skid: !player.onFoot && input.down('Space') && drivenSpeed > 10
+        ? Math.min(1, drivenSpeed / 30) : 0,
     });
     updateCamera(dt);
     updateHud();
@@ -821,6 +865,8 @@ function loop() {
     skyTime += dt;
     animateSky(skyTime);
     animateWater(city.water, skyTime);
+    // The sky lives behind the menu too, on the 17:24 sunset palette.
+    weather.update(dt, 0, -60, gameMinutes);
     // The city lives behind the menu: traffic cruises, residents stroll.
     traffic.update(dt, null);
     pedestrians.update(dt);
@@ -844,11 +890,18 @@ function loop() {
 window.__game = {
   player, city, input, traffic, pedestrians, police, enemies, audio, missions, damageSmoke,
   helicopter, radio, dialogue, response, garage, side, cityMap, popups, muzzle,
+  vehicles, weather,
+  setGameMinutes(m) {
+    gameMinutes = m;
+  },
   get cameraYaw() {
     return cameraYaw;
   },
   get gameMinutes() {
     return gameMinutes;
+  },
+  get skyTime() {
+    return skyTime;
   },
   get state() {
     return state;

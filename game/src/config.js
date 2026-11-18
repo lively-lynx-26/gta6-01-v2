@@ -23,15 +23,20 @@ export const CFG = {
   playerHeight: 1.8,
 
   // Cars. Each type feels different: the Comet GT is fast, the Bay Cab steady,
-  // the Vault Hauler heavy and tough, sedans and vans in between.
+  // the Vault Hauler heavy and tough, sedans and vans in between. Two bikes
+  // join the fleet: the Nebula R sport bike (quick, twitchy, leans into
+  // turns) and the Ironhog cruiser (slower, steadier).
   cars: {
     sedan: { name: 'Sedan', accel: 11, maxSpeed: 42, reverseSpeed: 10, turn: 1.9, grip: 8, color: 0x3a6ea5, body: 'sedan' },
     cab: { name: 'Bay Cab', accel: 10, maxSpeed: 38, reverseSpeed: 9, turn: 2.0, grip: 8, color: 0xf2b705, body: 'sedan' },
     comet: { name: 'Comet GT', accel: 18, maxSpeed: 55, reverseSpeed: 12, turn: 2.3, grip: 10, color: 0xc22424, body: 'sport' },
     van: { name: 'Van', accel: 8, maxSpeed: 34, reverseSpeed: 8, turn: 1.6, grip: 7, color: 0x7a7f85, body: 'van' },
     hauler: { name: 'Vault Hauler', accel: 7, maxSpeed: 30, reverseSpeed: 7, turn: 1.4, grip: 6, color: 0x2e3138, body: 'hauler' },
+    sportbike: { name: 'Nebula R', accel: 20, maxSpeed: 58, reverseSpeed: 8, turn: 3.1, grip: 6, color: 0x2fd4c4, body: 'bike' },
+    cruiser: { name: 'Ironhog', accel: 13, maxSpeed: 44, reverseSpeed: 7, turn: 2.2, grip: 7, color: 0x7a4a2b, body: 'bike' },
   },
   carRadius: 1.15, // collision radius used for cars against buildings
+  bikeRadius: 0.7, // bikes are narrower than cars
 
   // Population at the start of a run (traffic and pedestrians arrive in a
   // later chunk; the parked fleet is placed by the city builder now).
@@ -139,9 +144,24 @@ export const CFG = {
     { name: 'BAY BEATS 104.7', song: 'Paloma Nights', notes: [392, 494, 587, 784] },
   ],
 
-  // The clock: the game starts Friday 17:24 and one game minute passes
-  // per real second. Golden hour is the sunset palette for the chase.
-  clock: { day: 'FRI', startMinutes: 17 * 60 + 24 },
+  // Boats: the speedboat moored in the Marina basin and the jet ski at the
+  // beach by the Docks. Boats float on the bay and leave a wake behind.
+  boats: {
+    speedboat: { name: 'Wave Runner 290', accel: 13, maxSpeed: 46, reverseSpeed: 8, turn: 2.4, color: 0xf2f2f2 },
+    jetski: { name: 'Sea Skimmer', accel: 16, maxSpeed: 50, reverseSpeed: 6, turn: 3.3, color: 0xffd23e },
+  },
+  // The flyable civilian helicopter ("Maverick") parked on the helipad at
+  // the east end of the beach, by the Marina. W/S flies forward and back,
+  // A/D turns, Shift climbs, Space descends.
+  heli: {
+    name: 'Maverick', accel: 16, climbSpeed: 14, maxSpeed: 48, turn: 2.0, ceiling: 90,
+    color: 0xffc93e, stripe: 0x2b2f38,
+  },
+  helipad: { x: 150, z: 204, radius: 9 },
+  // The clock: the game starts Friday 17:24 and the clock runs about one
+  // game-hour per two real minutes (0.5 game-minutes per real second), so
+  // night falls roughly five real minutes after the start.
+  clock: { day: 'FRI', startMinutes: 17 * 60 + 24, rate: 0.5 },
   golden: {
     top: 0x2a4d8f,
     horizon: 0xff9a52,
@@ -151,6 +171,16 @@ export const CFG = {
     hemiGround: 0x7a5a3f,
     hemiIntensity: 0.9,
     fog: 0xe8b98a,
+  },
+  // Weather: clear, cloudy, rain and storm rotate on a seeded schedule.
+  // Rain darkens and slickens the roads (lower grip) and storms flash
+  // lightning. Durations are seconds of real time.
+  weather: {
+    clearGrip: 1.0,
+    cloudyGrip: 0.9,
+    rainGrip: 0.72,
+    stormGrip: 0.68,
+    durations: { clear: [180, 360], cloudy: [120, 240], rain: [90, 180], storm: [60, 120] },
   },
 
   // Side activities: taxi fares in the Bay Cab, one street race, and

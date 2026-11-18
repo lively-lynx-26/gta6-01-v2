@@ -7,7 +7,8 @@ import * as THREE from 'three';
 import { CFG } from './config.js';
 import { buildPersonMesh } from './models.js';
 import { resolveCircle, clampToBounds } from './city.js';
-import { stepCar } from './physics.js';
+import { stepCar, stepBike, stepBoat, stepHeli } from './physics.js';
+import { shoreFor } from './vehicles.js';
 
 function lerpAngle(a, b, t) {
   let d = (b - a) % (Math.PI * 2);
@@ -31,6 +32,15 @@ export class Player {
     this.car = null; // the parked-car record being driven, if any
     this.carSpeed = 0;
     this.carHeading = 0;
+    this.boat = null; // the boat record being driven, if any
+    this.boatSpeed = 0;
+    this.boatSteer = 0; // steering input, for the boat's roll
+    this.flying = false; // the Maverick is in the air
+    this.heli = null; // the flyable helicopter record, if any
+    this.altitude = 0; // metres above the ground while flying
+    this.bikeLean = 0; // visual roll of the bike being ridden
+    this.gripFactor = 1; // set by the main loop from the weather
+    this.vehicles = null; // set by the main loop: boats and the heli
     this.walkPhase = 0;
     this.cash = CFG.startCash;
     this.stars = 0;
@@ -87,13 +97,15 @@ export class Player {
     };
   }
 
-  // Gear 1-5 from the speed, for the HUD gauge.
+  // Gear 1-5 from the speed, for the HUD gauge. The helicopter shows H.
   gear() {
     if (this.onFoot) return this.speed > 0 ? 1 : 0;
-    const spec = this.car ? this.car.spec : null;
+    if (this.flying) return 'H';
+    const spec = this.boat ? this.boat.spec : (this.car ? this.car.spec : null);
     const top = spec ? spec.maxSpeed : 55;
-    const ratio = Math.min(1, Math.abs(this.carSpeed) / top);
-    return Math.abs(this.carSpeed) < 0.5 ? 0 : 1 + Math.floor(ratio * 4.99);
+    const v = this.boat ? Math.abs(this.boatSpeed) : Math.abs(this.carSpeed);
+    const ratio = Math.min(1, v / top);
+    return v < 0.5 ? 0 : 1 + Math.floor(ratio * 4.99);
   }
 
   // Switch to a weapon slot: 1 pistol, 2 SMG, 3 shotgun. Locked slots
@@ -129,8 +141,19 @@ export class Player {
     this.heading = heading;
     this.speed = 0;
     this.onFoot = true;
+    // A fresh spawn releases any vehicle the player was in: a quit
+    // mid-boat or mid-flight must not leave it taken forever.
+    if (this.car) this.car.taken = false;
+    if (this.boat) this.boat.taken = false;
+    if (this.heli) this.heli.taken = false;
     this.car = null;
+    this.boat = null;
+    this.heli = null;
+    this.flying = false;
+    this.altitude = 0;
+    this.bikeLean = 0;
     this.carSpeed = 0;
+    this.boatSpeed = 0;
     this.carHealth = this.carHealthMax;
     this.reloadTimer = 0;
     this.mesh.visible = true;
@@ -163,7 +186,9 @@ export class Player {
     this.x = car.x;
     this.z = car.z;
     this.heading = car.heading;
-    this.mesh.visible = false;
+    // On a bike the rider stays visible, seated on the machine.
+    this.mesh.visible = car.spec.body === 'bike';
+    if (this.mesh.visible) this._seatedPose();
     this.ownedCars.add(car.type);
     if (world) world.carStolen();
   }
@@ -175,6 +200,7 @@ export class Player {
     this.car = null;
     this.onFoot = true;
     this.carSpeed = 0;
+    this.bikeLean = 0;
     // Step out to the driver's side.
     this.x = car.x + Math.cos(car.heading) * 2.2;
     this.z = car.z - Math.sin(car.heading) * 2.2;
@@ -187,8 +213,96 @@ export class Player {
     this.mesh.rotation.y = this.heading;
   }
 
+  // The seated pose for riding a bike: legs bent forward to the pegs,
+  // arms forward to the bars, torso leaning in.
+  _seatedPose() {
+    const u = this.mesh.userData;
+    u.legL.rotation.x = -1.15;
+    u.legR.rotation.x = -1.15;
+    u.armL.rotation.x = -1.05;
+    u.armR.rotation.x = -1.05;
+    u.torso.rotation.x = 0.18;
+  }
+
+  // Boats: step aboard from the quay or the beach, E to leave at the
+  // nearest shore.
+  enterBoat(boat, world) {
+    boat.taken = true;
+    this.boat = boat;
+    this.onFoot = false;
+    this.boatSpeed = 0;
+    this.boatSteer = 0;
+    this.x = boat.x;
+    this.z = boat.z;
+    this.heading = boat.heading;
+    this.carHeading = boat.heading;
+    this.mesh.visible = false;
+    if (world) world.carStolen();
+  }
+
+  exitBoat() {
+    if (!this.boat) return;
+    const boat = this.boat;
+    boat.taken = false;
+    this.boat = null;
+    this.onFoot = true;
+    this.boatSpeed = 0;
+    const shore = shoreFor(boat);
+    this.x = shore.x;
+    this.z = shore.z;
+    this.heading = boat.heading;
+    this.mesh.visible = true;
+    this.mesh.position.set(this.x, 0, this.z);
+    this.mesh.rotation.y = this.heading;
+  }
+
+  // The helicopter: climb in on the helipad, fly, and step out only once
+  // it has touched down (E does nothing in the air).
+  enterHeli(heli, world) {
+    heli.taken = true;
+    this.heli = heli;
+    this.flying = true;
+    this.onFoot = false;
+    this.altitude = 0;
+    heli.y = 0;
+    heli.vx = 0;
+    heli.vz = 0;
+    heli.vy = 0;
+    this.x = heli.x;
+    this.z = heli.z;
+    this.heading = heli.heading;
+    this.carHeading = heli.heading;
+    this.mesh.visible = false;
+    if (world) world.carStolen();
+  }
+
+  exitHeli() {
+    if (!this.heli || this.altitude > 0.5) return;
+    const heli = this.heli;
+    heli.taken = false;
+    heli.y = 0;
+    heli.vx = 0;
+    heli.vz = 0;
+    heli.vy = 0;
+    this.heli = null;
+    this.flying = false;
+    this.onFoot = true;
+    this.altitude = 0;
+    this.x = heli.x + Math.cos(heli.heading) * 4;
+    this.z = heli.z - Math.sin(heli.heading) * 4;
+    const fixed = clampToBounds(this.x, this.z);
+    this.x = fixed.x;
+    this.z = fixed.z;
+    this.heading = heli.heading;
+    this.mesh.visible = true;
+    this.mesh.position.set(this.x, 0, this.z);
+    this.mesh.rotation.y = this.heading;
+  }
+
   update(dt, input, cameraYaw, world) {
     if (this.onFoot) this._updateFoot(dt, input, cameraYaw, world);
+    else if (this.flying) this._updateHeli(dt, input, world);
+    else if (this.boat) this._updateBoat(dt, input, world);
     else this._updateCar(dt, input, world);
     // Write the visible transform.
     if (this.onFoot) {
@@ -217,7 +331,17 @@ export class Player {
     } else if (this.car) {
       this.car.mesh.position.set(this.x, 0, this.z);
       this.car.mesh.rotation.y = this.carHeading;
+      if (this.car.spec.body === 'bike') {
+        // The bike leans into its turns, and the rider stays seated on it.
+        this.car.mesh.userData.lean.rotation.z = this.bikeLean;
+        this.mesh.visible = true;
+        this.mesh.position.set(this.x, 0, this.z);
+        this.mesh.rotation.y = this.carHeading;
+        this._seatedPose();
+      }
     }
+    // A boat or a helicopter is positioned by the vehicles module, from
+    // the same x / z / altitude the player carries.
   }
 
   _updateFoot(dt, input, cameraYaw, world) {
@@ -258,8 +382,19 @@ export class Player {
     this.z = bounded.z;
 
     if (input.consume('KeyE')) {
+      // E boards the nearest ride: a car or bike first, then a boat,
+      // then the helicopter on its helipad.
       const car = this.nearestCar();
-      if (car) this.enterCar(car, world);
+      if (car) {
+        this.enterCar(car, world);
+      } else if (this.vehicles) {
+        const boat = this.vehicles.nearestBoat(this.x, this.z);
+        if (boat) this.enterBoat(boat, world);
+        else {
+          const heli = this.vehicles.nearestHeli(this.x, this.z);
+          if (heli) this.enterHeli(heli, world);
+        }
+      }
     }
 
     // Weapon slots: 1 pistol, 2 SMG, 3 shotgun. Locked slots are ignored.
@@ -318,7 +453,17 @@ export class Player {
     if (input.down('Space')) this.carSpeed *= Math.max(0, 1 - 3.2 * dt);
 
     const carState = { x: this.x, z: this.z, heading: this.carHeading, speed: this.carSpeed };
-    const impact = stepCar(carState, spec, throttle, axes.x, dt, this.city.colliders);
+    const isBike = this.car.spec.body === 'bike';
+    let impact = 0;
+    if (isBike) {
+      // A bike leans into its turns and gets twitchy flat out.
+      const res = stepBike(carState, spec, throttle, axes.x, dt, this.city.colliders, this.gripFactor);
+      impact = res.impact;
+      this.bikeLean = res.lean;
+    } else {
+      impact = stepCar(carState, spec, throttle, axes.x, dt, this.city.colliders, this.gripFactor);
+      this.bikeLean = 0;
+    }
     this.x = carState.x;
     this.z = carState.z;
     this.carHeading = carState.heading;
@@ -346,18 +491,61 @@ export class Player {
     if (input.consume('KeyE')) this.exitCar();
   }
 
+  // Driving a boat: W/S throttle, A/D steer, E to step ashore. The boat
+  // stays in its own water; the shore is where the player gets out.
+  _updateBoat(dt, input, world) {
+    const axes = input.axes();
+    let throttle = 0;
+    if (axes.y > 0) throttle = 1;
+    else if (axes.y < 0) throttle = -1;
+    const boat = this.boat;
+    const boatState = { x: this.x, z: this.z, heading: this.carHeading, speed: this.boatSpeed };
+    stepBoat(boatState, boat.spec, throttle, axes.x, dt, boat.rect);
+    this.x = boatState.x;
+    this.z = boatState.z;
+    this.carHeading = boatState.heading;
+    this.boatSpeed = boatState.speed;
+    this.heading = this.carHeading;
+    this.boatSteer = axes.x;
+    boat.x = this.x;
+    boat.z = this.z;
+    boat.heading = this.carHeading;
+    boat.speed = this.boatSpeed;
+    if (input.consume('KeyE')) this.exitBoat();
+  }
+
+  // Flying the helicopter: W/S flies forward and back, A/D turns, Shift
+  // climbs, Space descends. E steps out only once it has touched down.
+  _updateHeli(dt, input, world) {
+    const h = this.heli;
+    const axes = input.axes();
+    const climb = (input.down('ShiftLeft') ? 1 : 0) - (input.down('Space') ? 1 : 0);
+    stepHeli(h, h.spec, axes.y, axes.x, climb, dt, this.city.colliders);
+    this.x = h.x;
+    this.z = h.z;
+    this.altitude = h.y;
+    this.heading = h.heading;
+    this.carHeading = h.heading;
+    if (input.consume('KeyE')) this.exitHeli();
+  }
+
   // True while a reload is in progress.
   get reloading() {
     return this.reloadTimer > 0;
   }
 
-  // Speed in miles per hour for the HUD.
+  // Speed in miles per hour for the HUD. In the air it is airspeed.
   speedMph() {
-    const v = this.onFoot ? this.speed : Math.abs(this.carSpeed);
+    if (this.flying && this.heli) {
+      return Math.round(Math.hypot(this.heli.vx, this.heli.vz) * 2.23694);
+    }
+    const v = this.onFoot ? this.speed : this.boat ? Math.abs(this.boatSpeed) : Math.abs(this.carSpeed);
     return Math.round(v * 2.23694);
   }
 
   vehicleName() {
+    if (this.flying) return `Maverick · ALT ${Math.round(this.altitude)}m`;
+    if (this.boat) return this.boat.spec.name;
     if (this.onFoot) return 'On foot';
     return this.car ? this.car.spec.name : 'On foot';
   }

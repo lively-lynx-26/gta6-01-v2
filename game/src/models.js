@@ -335,6 +335,213 @@ export function buildCarMesh(body, color, kind = body) {
   return group;
 }
 
+// --- Motorcycles ------------------------------------------------------------
+// A bike, built to lean: two wheels, a tank, a seat, a tail and bars. The
+// whole bike hangs in a `lean` child group, so the rider's physics can
+// roll it into turns without touching its heading. Faces +z.
+// `kind` is 'sportbike' (low, sleek, clip-on bars) or 'cruiser' (high
+// bars, fat rear tyre, chrome). userData.lean is the tilt group.
+const _bikeTireGeo = new THREE.TorusGeometry(0.3, 0.09, 8, 18);
+_bikeTireGeo.rotateY(Math.PI / 2);
+const _bikeTireGeoBig = new THREE.TorusGeometry(0.32, 0.12, 8, 18);
+_bikeTireGeoBig.rotateY(Math.PI / 2);
+const _bikeHubGeo = new THREE.CylinderGeometry(0.1, 0.1, 0.14, 10);
+_bikeHubGeo.rotateZ(Math.PI / 2);
+
+export function buildBikeMesh(kind, color) {
+  const group = new THREE.Group();
+  const lean = new THREE.Group();
+  group.add(lean);
+  const paint = std(color, 0.35, 0.45);
+  const dark = std(0x14161a, 0.9, 0.1);
+  const chrome = std(0xc8ccd2, 0.25, 0.9);
+  const glass = std(0x1a2a33, 0.15, 0.6);
+  const headMat = new THREE.MeshStandardMaterial({
+    color: 0xfff6c9, emissive: 0xfff2b0, emissiveIntensity: 0.7, roughness: 0.3,
+  });
+  const tailMat = new THREE.MeshStandardMaterial({
+    color: 0xaa1111, emissive: 0xcc2222, emissiveIntensity: 0.6, roughness: 0.3,
+  });
+  const sport = kind === 'sportbike';
+  const tireGeo = sport ? _bikeTireGeo : _bikeTireGeoBig;
+  for (const z of [0.78, -0.78]) {
+    const wheel = new THREE.Group();
+    wheel.add(new THREE.Mesh(tireGeo, dark));
+    wheel.add(new THREE.Mesh(_bikeHubGeo, chrome));
+    wheel.position.set(0, 0.3, z);
+    lean.add(wheel);
+  }
+  // Frame: a sloped spine from the steering head to the tail.
+  const spine = box(0.14, 0.14, 1.5, dark, 0, 0.55, 0);
+  spine.rotation.x = sport ? 0.12 : 0.05;
+  lean.add(spine);
+  // Tank and seat: a sculpted teardrop over the frame.
+  lean.add(new THREE.Mesh(extrudeProfile([
+    ['m', -0.55, 0.55], ['l', 0.55, 0.55],
+    ['q', 0.58, 0.72, 0.5, 0.85],
+    ['l', -0.3, 0.92],
+    ['q', -0.55, 0.92, -0.58, 0.75],
+  ], 0.5), paint));
+  const seat = box(0.42, 0.1, 0.62, dark, 0, 0.82, -0.55);
+  lean.add(seat);
+  // Tail: a short upswept cowl behind the seat.
+  const tail = box(0.34, 0.09, 0.5, paint, 0, 0.86, -0.95);
+  tail.rotation.x = sport ? -0.18 : -0.08;
+  lean.add(tail);
+  lean.add(lens(tailMat, 0, 0.82, -1.18, 0));
+  // Front forks and bars.
+  for (const side of [-1, 1]) {
+    const fork = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.85, 8), chrome);
+    fork.position.set(side * 0.09, 0.62, 0.72);
+    fork.rotation.x = sport ? 0.42 : 0.28;
+    lean.add(fork);
+  }
+  if (sport) {
+    // Sport fairing: a nose cone with a smoked screen, low clip-on bars.
+    lean.add(new THREE.Mesh(extrudeProfile([
+      ['m', -0.28, 0.5], ['l', 0.28, 0.5],
+      ['q', 0.3, 0.75, 0.22, 0.95],
+      ['l', -0.22, 0.95],
+      ['q', -0.3, 0.75, -0.28, 0.5],
+    ], 0.42), paint));
+    const screen = box(0.34, 0.05, 0.3, glass, 0, 0.98, 0.62);
+    screen.rotation.x = -0.5;
+    lean.add(screen);
+    for (const side of [-1, 1]) {
+      const bar = box(0.3, 0.04, 0.04, dark, side * 0.22, 0.86, 0.55);
+      bar.rotation.z = side * 0.15;
+      lean.add(bar);
+    }
+  } else {
+    // Cruiser: a round headlamp, high swept bars, fat chrome exhaust.
+    const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.14, 12, 8), headMat);
+    lamp.position.set(0, 0.78, 0.86);
+    lamp.scale.set(1, 1, 0.6);
+    lean.add(lamp);
+    for (const side of [-1, 1]) {
+      const riser = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.4, 8), chrome);
+      riser.position.set(side * 0.16, 0.95, 0.5);
+      lean.add(riser);
+      const bar = box(0.34, 0.04, 0.04, chrome, side * 0.26, 1.12, 0.42);
+      bar.rotation.z = side * 0.2;
+      lean.add(bar);
+    }
+    const exhaust = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 1.1, 10), chrome);
+    exhaust.rotation.x = Math.PI / 2;
+    exhaust.position.set(0.16, 0.28, -0.3);
+    lean.add(exhaust);
+  }
+  lean.add(lens(headMat, 0, 0.72, 0.88, 0));
+  group.userData.lean = lean;
+  return group;
+}
+
+// --- Boats ------------------------------------------------------------------
+// A boat, floating at y = 0 with its hull in the water. Faces +z.
+// `kind` is 'speedboat' (a white runabout with a windshield and an
+// outboard) or 'jetski' (a small personal watercraft).
+export function buildBoatMesh(kind, color) {
+  const group = new THREE.Group();
+  const paint = std(color, 0.35, 0.4);
+  const dark = std(0x14161a, 0.9, 0.1);
+  const chrome = std(0xc8ccd2, 0.25, 0.9);
+  const glass = std(0x1a2a33, 0.15, 0.6);
+  if (kind === 'speedboat') {
+    // Hull: a sculpted V-bottom runabout, 5.4 m long.
+    group.add(new THREE.Mesh(extrudeProfile([
+      ['m', -2.7, 0.05], ['l', 2.7, 0.05],
+      ['q', 2.75, 0.45, 2.55, 0.75],
+      ['l', -2.5, 0.75],
+      ['q', -2.72, 0.75, -2.7, 0.3],
+    ], 2.1), paint));
+    const stripe = box(2.0, 0.12, 4.6, std(0x2fd4c4, 0.4, 0.3), 0, 0.42, 0);
+    group.add(stripe);
+    // Deck, windshield, seats and console.
+    group.add(box(1.9, 0.1, 4.4, std(0xe8e8e8, 0.8, 0), 0, 0.78, 0));
+    const shield = box(1.5, 0.55, 0.04, glass, 0, 1.1, 0.9);
+    shield.rotation.x = -0.35;
+    group.add(shield);
+    group.add(box(1.5, 0.5, 0.5, dark, 0, 1.0, 0.55)); // console
+    for (const z of [-0.4, -1.1]) {
+      group.add(box(1.5, 0.45, 0.55, std(0x2b2f38, 0.85, 0), 0, 1.0, z)); // seats
+    }
+    // Outboard motor at the transom.
+    group.add(box(0.5, 0.7, 0.4, dark, 0, 0.45, -2.75));
+    group.add(box(0.44, 0.25, 0.5, chrome, 0, 0.05, -2.78));
+    // Bow rail.
+    for (const side of [-1, 1]) {
+      group.add(box(0.04, 0.04, 1.6, chrome, side * 0.85, 1.0, 1.7));
+    }
+  } else {
+    // Jet ski: a compact hull, a saddle seat and a handlebar.
+    group.add(new THREE.Mesh(extrudeProfile([
+      ['m', -1.5, 0.05], ['l', 1.5, 0.05],
+      ['q', 1.55, 0.4, 1.35, 0.6],
+      ['l', -1.4, 0.6],
+      ['q', -1.52, 0.6, -1.5, 0.3],
+    ], 1.05), paint));
+    group.add(box(0.9, 0.12, 2.2, dark, 0, 0.62, -0.1)); // saddle
+    const bars = box(0.7, 0.06, 0.06, dark, 0, 0.85, 0.95);
+    group.add(bars);
+    group.add(box(0.08, 0.3, 0.08, chrome, 0, 0.7, 0.95));
+    group.add(box(0.5, 0.3, 0.5, dark, 0, 0.75, 1.15)); // nose cowl
+  }
+  return group;
+}
+
+// --- Civilian helicopter -----------------------------------------------------
+// The flyable "Maverick": a yellow helicopter with a dark stripe, the same
+// silhouette as the police AIR-1 but a civilian paint job. Faces +z.
+// userData.rotor and userData.tailRotor spin while it flies.
+export function buildHeliMesh(color, stripeColor) {
+  const group = new THREE.Group();
+  const paint = std(color, 0.4, 0.3);
+  const dark = std(0x1a2a33, 0.3, 0.5);
+  const stripe = std(stripeColor, 0.4, 0.3);
+  const body = new THREE.Mesh(new THREE.BoxGeometry(2.4, 1.5, 4.6), paint);
+  group.add(body);
+  const nose = new THREE.Mesh(new THREE.SphereGeometry(1.15, 12, 10), dark);
+  nose.position.set(0, -0.1, 2.2);
+  nose.scale.set(1, 0.85, 0.9);
+  group.add(nose);
+  const band = new THREE.Mesh(new THREE.BoxGeometry(2.45, 0.35, 4.0), stripe);
+  band.position.y = -0.35;
+  group.add(band);
+  const boom = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 4.2), paint);
+  boom.position.set(0, 0.25, -4.2);
+  group.add(boom);
+  const fin = new THREE.Mesh(new THREE.BoxGeometry(0.18, 1.4, 1.1), stripe);
+  fin.position.set(0, 0.7, -6.0);
+  group.add(fin);
+  for (const s of [-0.9, 0.9]) {
+    const skid = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 3.4), dark);
+    skid.position.set(s, -1.05, 0.2);
+    group.add(skid);
+  }
+  const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.8, 8), dark);
+  mast.position.y = 1.1;
+  group.add(mast);
+  const rotor = new THREE.Group();
+  rotor.position.y = 1.55;
+  for (const a of [0, Math.PI / 2]) {
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(11, 0.08, 0.5), dark);
+    blade.rotation.y = a;
+    rotor.add(blade);
+  }
+  group.add(rotor);
+  const tailRotor = new THREE.Group();
+  tailRotor.position.set(0.35, 0.6, -6.0);
+  for (const a of [0, Math.PI / 2]) {
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.08, 1.6, 0.12), dark);
+    blade.rotation.z = a;
+    tailRotor.add(blade);
+  }
+  group.add(tailRotor);
+  group.userData.rotor = rotor;
+  group.userData.tailRotor = tailRotor;
+  return group;
+}
+
 // Dario on foot: a rounded, stylised figure, about 1.8 m tall, facing +z.
 export function buildPersonMesh() {
   return buildPedestrianMesh({ shirt: 0x2e6f8e, pants: 0x2b2f38, skin: 0xc98e6b, hair: true });

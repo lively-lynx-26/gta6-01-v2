@@ -18,10 +18,14 @@ export class Helicopter {
     this.angle = 0; // orbit position around the player
     this.rotorAngle = 0;
     this.active = false;
+    // The orbit height, smoothed: AIR-1 flies low (16 m) over open
+    // ground so the chase camera can see it, and rises to clear the
+    // roofs when its orbit carries it over a tall building.
+    this.y = 16;
     // A staged height for screenshots: the orbit height (34 m) clears
     // the tallest towers, but that puts the helicopter above the frame
     // of a chase camera. A shot may set this lower so the mesh reads in
-    // the frame; live play leaves it null and flies at orbit height.
+    // the frame; live play leaves it null and flies the low orbit.
     this.heightOverride = null;
 
     const group = new THREE.Group();
@@ -117,18 +121,40 @@ export class Helicopter {
 
   // One step. `active` is true while the heat calls for air support.
   // The helicopter orbits the player, its rotors spin, and its
-  // searchlight tracks the player's position on the ground.
-  update(dt, player, active) {
+  // searchlight tracks the player's position on the ground. `colliders`
+  // (with `h`, building height) lets the orbit rise over tall roofs
+  // instead of clipping them; without them the low orbit stands.
+  update(dt, player, active, colliders = null) {
     this.active = active;
     this.mesh.visible = active;
     this.pool.visible = active;
     this.shadow.visible = active;
+    this.lightGroup.visible = active;
     if (!active) return;
     const h = CFG.helicopter;
     this.angle += dt * h.orbitSpeed;
     const x = player.x + Math.cos(this.angle) * h.circleRadius;
     const z = player.z + Math.sin(this.angle) * h.circleRadius;
-    const y = (this.heightOverride ?? h.height) + Math.sin(this.angle * 0.7) * 2;
+    // Rooftop clearance: the tallest roof near the helicopter sets the
+    // orbit height (roof + 4 m), floored at the low orbit and capped so
+    // it never climbs out of sight entirely. The height eases toward
+    // its target so the helicopter does not pop between roofs. The
+    // window is wide (16 m) so the helicopter starts climbing before it
+    // reaches a tall tower, not as it arrives over it.
+    let targetY = 16;
+    if (colliders) {
+      let maxH = 0;
+      for (const b of colliders) {
+        if (!b.h) continue;
+        if (x >= b.minX - 16 && x <= b.maxX + 16 && z >= b.minZ - 16 && z <= b.maxZ + 16) {
+          maxH = Math.max(maxH, b.h);
+        }
+      }
+      if (maxH > 0) targetY = Math.max(targetY, maxH + 4);
+    }
+    targetY = Math.min(targetY, 46);
+    this.y += (targetY - this.y) * Math.min(1, dt * 3);
+    const y = (this.heightOverride ?? this.y) + Math.sin(this.angle * 0.7) * 2;
     this.mesh.position.set(x, y, z);
     // Face along the orbit, nose forward.
     this.mesh.rotation.y = Math.atan2(

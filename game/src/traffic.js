@@ -7,7 +7,7 @@
 
 import { CFG } from './config.js';
 import { makeRng, range, pick } from './random.js';
-import { buildCarMesh } from './models.js';
+import { buildBikeMesh, buildCarMesh } from './models.js';
 import { resolveCircle, carAhead, stepCar } from './physics.js';
 
 // Street centrelines, both directions: the streets between the blocks.
@@ -26,12 +26,14 @@ export class Traffic {
     this.city = city;
     this.rng = makeRng(CFG.seed + 101); // its own stream, after the city's
     this.cars = [];
+    this.gripFactor = 1; // set by the main loop from the weather
     // Two cars work the Marina and two work the Docks, so those districts
     // have their own traffic: cabs by the basin, delivery vans and a
-    // hauler at the warehouses. The rest roam the whole city.
+    // hauler at the warehouses. The rest roam the whole city. Two of the
+    // roamers are bikes, quicker than the cars around them.
     const zones = ['marina', 'marina', 'docks', 'docks'];
     const zoneTypes = { marina: ['cab', 'sedan'], docks: ['van', 'hauler'] };
-    const types = ['sedan', 'sedan', 'sedan', 'van', 'sedan', 'cab', 'van', 'sedan', 'comet', 'sedan', 'van', 'sedan'];
+    const types = ['sedan', 'sedan', 'sedan', 'van', 'sedan', 'cab', 'van', 'sedan', 'comet', 'sedan', 'sportbike', 'cruiser'];
     for (let i = 0; i < CFG.trafficCars; i++) {
       const zone = zones[i] || null;
       const type = zone ? zoneTypes[zone][i % 2] : types[i % types.length];
@@ -45,7 +47,7 @@ export class Traffic {
         : zone === 'docks' ? pick(this.rng, [144, 192])
         : pick(this.rng, STREETS);
       const heading = pick(this.rng, [0, Math.PI / 2, Math.PI, -Math.PI / 2]);
-      const mesh = buildCarMesh(spec.body, spec.color, type);
+      const mesh = spec.body === 'bike' ? buildBikeMesh(type, spec.color) : buildCarMesh(spec.body, spec.color, type);
       scene.add(mesh);
       const car = {
         type,
@@ -61,6 +63,8 @@ export class Traffic {
         waypoint: null,
         zone,
       };
+      // Bikes cruise faster than the cars around them.
+      if (spec.body === 'bike') car.cruise = range(this.rng, 12, 18);
       car.waypoint = this._nextWaypoint(car);
       this.cars.push(car);
       mesh.position.set(car.x, 0, car.z);
@@ -144,7 +148,7 @@ export class Traffic {
         }
       }
       const throttle = car.speed < target ? 1 : 0;
-      stepCar(car, car.spec, throttle, steer, dt, this.city.colliders);
+      stepCar(car, car.spec, throttle, steer, dt, this.city.colliders, this.gripFactor);
       // Traffic never reverses and never exceeds its cruise speed.
       if (car.speed < 0) car.speed = 0;
       if (car.speed > car.cruise) car.speed = car.cruise;
@@ -153,6 +157,10 @@ export class Traffic {
       car.z = fixed.z;
       car.mesh.position.set(car.x, 0, car.z);
       car.mesh.rotation.y = car.heading;
+      // A traffic bike leans into its turns like the player's.
+      if (car.spec.body === 'bike') {
+        car.mesh.userData.lean.rotation.z = -steer * 0.3 * Math.min(1, Math.abs(car.speed) / 18);
+      }
     }
     // Keep the cars from overlapping each other at intersections.
     for (let i = 0; i < this.cars.length; i++) {

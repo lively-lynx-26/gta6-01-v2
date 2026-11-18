@@ -164,6 +164,21 @@ export class CityMap {
       ctx.arc(this._x(car.x), this._y(car.z), 2.2, 0, Math.PI * 2);
       ctx.fill();
     }
+    // Boats on the water, and the helicopter when it is in the air.
+    if (state.vehicles) {
+      ctx.fillStyle = 'rgba(127, 212, 255, 0.95)';
+      for (const boat of state.vehicles.boats) {
+        ctx.beginPath();
+        ctx.arc(this._x(boat.x), this._y(boat.z), 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      if (state.player.flying) {
+        ctx.fillStyle = '#ffc93e';
+        ctx.beginPath();
+        ctx.arc(this._x(state.player.x), this._y(state.player.z), 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
     const flashRed = Math.sin(state.time * 11) > 0;
     ctx.fillStyle = flashRed ? '#ff3333' : '#3388ff';
     for (const c of state.police.cruisers) {

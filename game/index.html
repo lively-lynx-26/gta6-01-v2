@@ -18,6 +18,7 @@
   #hud-cash { font-size: 26px; font-weight: 800; color: #7dff9a; text-shadow: 0 2px 6px rgba(0,0,0,0.7); margin-top: 6px; }
   #hud-top-right { position: absolute; top: 14px; right: 16px; font-size: 26px; letter-spacing: 0.12em; text-shadow: 0 2px 6px rgba(0,0,0,0.8); text-align: right; }
   #hud-clock { font-size: 15px; font-weight: 700; letter-spacing: 0.1em; margin-top: 2px; }
+  #hud-weather { font-size: 13px; font-weight: 700; letter-spacing: 0.1em; color: #bfe3f5; text-shadow: 0 1px 4px rgba(0,0,0,0.7); margin-top: 2px; }
   #hud-radio { font-size: 13px; color: #ffd964; text-shadow: 0 1px 4px rgba(0,0,0,0.7); margin-top: 6px; }
   #hud-rep { font-size: 14px; font-weight: 700; color: #7fd4ff; text-shadow: 0 1px 4px rgba(0,0,0,0.7); margin-top: 4px; }
   #hud-rep-bar { height: 6px; background: rgba(0,0,0,0.55); border: 1px solid rgba(255,255,255,0.35); border-radius: 3px; overflow: hidden; margin-top: 3px; width: 200px; }
@@ -112,7 +113,7 @@
     <div id="hud-rep-bar"><div id="hud-rep-fill"></div></div>
     <div id="hud-side"></div>
   </div>
-  <div id="hud-top-right"><span id="hud-stars">☆☆☆☆☆</span><div id="hud-clock">FRI 17:24</div></div>
+  <div id="hud-top-right"><span id="hud-stars">☆☆☆☆☆</span><div id="hud-clock">FRI 17:24</div><div id="hud-weather">☀ CLEAR</div></div>
   <div id="hud-response"><div id="hud-response-title">SBPD RESPONSE</div><div id="hud-response-list"></div></div>
   <div id="hud-district"><div id="hud-district-name"></div><div id="hud-district-tag"></div></div>
   <div id="hud-bottom-left">
@@ -141,7 +142,7 @@
   <canvas id="hud-minimap" width="176" height="176"></canvas>
   <div id="hud-dialogue"><canvas id="dlg-portrait" width="72" height="72"></canvas><div><div id="dlg-name"></div><div id="dlg-text"></div></div></div>
   <div id="hud-popups"></div>
-  <div id="hud-hint">WASD move &nbsp;·&nbsp; E enter / leave car &nbsp;·&nbsp; F or click shoot &nbsp;·&nbsp; R reload &nbsp;·&nbsp; 1-3 weapons &nbsp;·&nbsp; Shift sprint / nitro &nbsp;·&nbsp; Space brake &nbsp;·&nbsp; M map &nbsp;·&nbsp; V radio &nbsp;·&nbsp; N mute &nbsp;·&nbsp; Esc pause</div>
+  <div id="hud-hint">WASD move &nbsp;·&nbsp; E enter / leave vehicle &nbsp;·&nbsp; F or click shoot &nbsp;·&nbsp; R reload &nbsp;·&nbsp; 1-3 weapons &nbsp;·&nbsp; Shift sprint / nitro / climb &nbsp;·&nbsp; Space brake / descend &nbsp;·&nbsp; M map &nbsp;·&nbsp; V radio &nbsp;·&nbsp; N mute &nbsp;·&nbsp; Esc pause</div>
   <div id="hud-banner" style="display:none"></div>
 </div>
 
@@ -151,7 +152,7 @@
     <h2>SOLMAR BAY — CITY MAP</h2>
     <div id="map-missions"></div>
     <div id="map-stats"></div>
-    <div id="map-legend">LEGEND — G Rosa's Garage · A Bayside Arms · H Safehouse · + Hospital · P Police HQ · S Spray Bay</div>
+    <div id="map-legend">LEGEND — G Rosa's Garage · A Bayside Arms · H Safehouse · + Hospital · P Police HQ · S Spray Bay · L Helipad</div>
     <div id="map-hint">M or Esc to close</div>
   </div>
 </div>

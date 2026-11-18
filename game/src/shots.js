@@ -1,9 +1,9 @@
 // Solmar Bay — Neon Tide: screenshot scene presets. Each of the four
 // screenshots is one named scene, selectable in the browser through the
 // `shot` query parameter (see shots.json): a police chase in the Comet GT
-// at golden hour with the helicopter overhead, driving the Bay Cab with a
-// fare waiting, on foot at Bayfront Plaza mid-firefight, and the full city
-// map screen. A preset places the player, the car, the camera and the HUD
+// at golden hour with the helicopter overhead, riding the Nebula R sport
+// bike through the city, on foot at Bayfront Plaza mid-firefight, and the
+// full city map screen. A preset places the player, the car, the camera and the HUD
 // text, then the game advances a fixed number of fixed-length steps so the
 // shot is fully deterministic: the same seed always renders the same frame.
 
@@ -34,21 +34,21 @@ export const SHOTS = {
   },
   drive: {
     mode: 'car',
-    carType: 'cab',
+    carType: 'sportbike',
     x: -60,
     z: -48,
     heading: Math.PI / 2, // east, along the street north of the plaza
-    speed: 14,
+    speed: 20,
     cameraDistance: 9,
     cameraPitch: -0.24,
     cash: 120,
     stars: 0,
     rep: 0,
-    mission: 'Mission 1 — Sunset Fare',
-    objective: 'Pick up the fare, then drive to the Marina',
-    waypoint: { x: 140, z: -24 }, // the Marina drop-off, marked on the minimap
+    mission: 'Free Roam — The Nebula R',
+    objective: 'Lean into the corners — the city is yours',
+    waypoint: { x: 140, z: -24 }, // the Marina, marked on the minimap
     missionIndex: 0,
-    trafficNear: true, // traffic on the street, and a fare at the curb
+    trafficNear: true, // traffic on the street
     clockMinutes: 30, // 17:54
     steps: 40,
   },

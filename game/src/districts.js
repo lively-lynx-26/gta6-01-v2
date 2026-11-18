@@ -31,4 +31,5 @@ export const LANDMARKS = [
   { name: 'Hospital', x: -96, z: -96, icon: '+' },
   { name: 'Police HQ', x: 96, z: -144, icon: 'P' },
   { name: 'Spray Bay', x: 96, z: 48, icon: 'S' },
+  { name: 'Helipad', x: 150, z: 204, icon: 'L' },
 ];

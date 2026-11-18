@@ -398,7 +398,7 @@ export class Missions {
 
   _spawnMissionCarAt(type, x, z, heading) {
     const spec = CFG.cars[type];
-    const mesh = buildCarMesh(spec.body, spec.color);
+    const mesh = buildCarMesh(spec.body, spec.color, type);
     mesh.position.set(x, 0, z);
     mesh.rotation.y = heading;
     this.scene.add(mesh);

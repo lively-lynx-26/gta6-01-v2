@@ -45,7 +45,7 @@ export class Traffic {
         : zone === 'docks' ? pick(this.rng, [144, 192])
         : pick(this.rng, STREETS);
       const heading = pick(this.rng, [0, Math.PI / 2, Math.PI, -Math.PI / 2]);
-      const mesh = buildCarMesh(spec.body, spec.color);
+      const mesh = buildCarMesh(spec.body, spec.color, type);
       scene.add(mesh);
       const car = {
         type,

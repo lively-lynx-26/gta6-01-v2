@@ -190,7 +190,7 @@ export function buildCity(scene) {
     if (z > 150) continue; // keep the docks clear
     const heading = vertical ? (side > 0 ? Math.PI : 0) : (side > 0 ? Math.PI / 2 : -Math.PI / 2);
     const spec = CFG.cars[type];
-    const mesh = buildCarMesh(spec.body, spec.color);
+    const mesh = buildCarMesh(spec.body, spec.color, type);
     mesh.position.set(x, 0, z);
     mesh.rotation.y = heading;
     scene.add(mesh);
@@ -206,7 +206,7 @@ export function buildCity(scene) {
   ];
   for (const spot of fixedParked) {
     const spec = CFG.cars[spot.type];
-    const mesh = buildCarMesh(spec.body, spec.color);
+    const mesh = buildCarMesh(spec.body, spec.color, spot.type);
     mesh.position.set(spot.x, 0, spot.z);
     mesh.rotation.y = spot.heading;
     scene.add(mesh);

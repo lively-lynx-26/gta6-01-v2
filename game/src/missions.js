@@ -19,15 +19,17 @@ import { buildCarMesh } from './models.js';
 import { STREETS } from './traffic.js';
 
 // The seven jobs, in order, with their pay. The finale pays the most: it is
-// the job that makes Dario King of Solmar.
+// the job that makes Dario King of Solmar. `stages` is how many phases the
+// job runs through — the HUD shows STAGE x/y, the timer and the next job,
+// like the top entries do.
 export const MISSIONS = [
-  { title: 'Mission 1 — Sunset Fare', pay: 120 },
-  { title: 'Mission 2 — Borrowed Wheels', pay: 340 },
-  { title: 'Mission 3 — The Drop', pay: 1240 },
-  { title: 'Mission 4 — Dockside Heat', pay: 890 },
-  { title: 'Mission 5 — Double Cross', pay: 1100 },
-  { title: 'Mission 6 — Payback', pay: 1600 },
-  { title: 'Mission 7 — King of Solmar', pay: 2500 },
+  { title: 'Mission 1 — Sunset Fare', pay: 120, stages: 2 },
+  { title: 'Mission 2 — Borrowed Wheels', pay: 340, stages: 2 },
+  { title: 'Mission 3 — The Drop', pay: 1240, stages: 2 },
+  { title: 'Mission 4 — Dockside Heat', pay: 890, stages: 1 },
+  { title: 'Mission 5 — Double Cross', pay: 1100, stages: 3 },
+  { title: 'Mission 6 — Payback', pay: 1600, stages: 3 },
+  { title: 'Mission 7 — King of Solmar', pay: 2500, stages: 3 },
 ];
 
 const MARINA = { x: 140, z: -24 }; // the fare's drop-off, on the land by the basin
@@ -82,7 +84,8 @@ export class Missions {
     this.waypoint = null; // { x, z } the beacon marks, or null
     this.spawnPoint = { x: 0, z: -60, heading: 0 }; // where this job began
     this.banner = null; // { text, t } while a completion/failure banner shows
-    this.time = 0;
+    this.time = 0; // total time this run, for the beacon pulse
+    this.jobTime = 0; // seconds since the current job started: the HUD timer
     this._objective = 'Explore Solmar Bay';
     // Dialogue hook: the main loop sets onLine(name, text, portrait) so
     // Rosa, Vince and dispatch can brief the jobs. Null means silent.
@@ -135,6 +138,30 @@ export class Missions {
     return this.phase === 'done';
   }
 
+  // The current phase inside the job, 1-based, for the HUD: STAGE x/y.
+  get stage() {
+    if (this.phase === 'done' || this.index >= MISSIONS.length) return null;
+    return Math.min(MISSIONS[this.index].stages, this.step + 1);
+  }
+
+  get stages() {
+    if (this.phase === 'done' || this.index >= MISSIONS.length) return null;
+    return MISSIONS[this.index].stages;
+  }
+
+  // The next job's title, for the HUD's NEXT line; the finale points at
+  // the crown itself.
+  get nextTitle() {
+    if (this.phase === 'done' || this.index >= MISSIONS.length) return null;
+    return this.index + 1 < MISSIONS.length ? MISSIONS[this.index + 1].title : 'KING OF SOLMAR';
+  }
+
+  // The job timer as m:ss, for the HUD.
+  get jobTimeText() {
+    const s = Math.floor(this.jobTime);
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  }
+
   get waypointDistance() {
     if (!this.waypoint) return null;
     return Math.hypot(this.player.x - this.waypoint.x, this.player.z - this.waypoint.z);
@@ -183,6 +210,7 @@ export class Missions {
     this.step = 0;
     this.phase = 'active';
     this.floor = 0;
+    this.jobTime = 0;
     this.vehicle = null;
     this.goons = [];
     this.banner = null;
@@ -251,13 +279,14 @@ export class Missions {
       this.floor = 3;
       this._objective = 'Take the Vault Hauler';
       this.waypoint = { x: this.vehicle.x, z: this.vehicle.z };
-      brief('One last job, Dario. Take the Hauler to the Plaza, and this city is yours.');
+      brief('One last job, Dario. Sloane runs the Docks himself now — take the Hauler to the Plaza, and this city is yours.');
     }
   }
 
   // --- One step, called every frame while playing ---------------------------
   update(dt) {
     this.time += dt;
+    this.jobTime += dt;
     if (this.phase === 'done') return;
 
     if (this.phase === 'banner') {
@@ -363,6 +392,7 @@ export class Missions {
           this.waypoint = { x: DOCKS.x, z: DOCKS.z };
           if (this.onLine) {
             this.onLine('Vince Marlowe', "You should've stayed gone, Cruz. Boys — take him down!", 'vince');
+            this.onLine('Rosa — Rosa\'s Garage', 'Vince sold us out — lose them, then we take the Docks back.', 'rosa');
           }
         }
       } else if (this.goonsAlive() === 0) {
@@ -413,8 +443,17 @@ export class Missions {
             this.step = 2;
             this.floor = 2;
             this._spawnGoons([[-18, -12], [18, -12], [0, -22]]);
+            // The finale has a face: the middle guard is Captain Sloane
+            // of the SBPD, the officer who bought Vince — tougher than
+            // his crew, and the last man between Dario and the city.
+            const boss = this.goons[1];
+            boss.health = 250;
+            boss.isBoss = true;
             this._objective = 'Clear the Plaza — take the city';
             this.waypoint = { x: 0, z: -12 };
+            if (this.onLine) {
+              this.onLine('Captain Sloane — SBPD', 'Cruz. You picked the wrong city to come back to.', 'sloane');
+            }
           }
         } else {
           this._objective = 'Get back in the Vault Hauler';

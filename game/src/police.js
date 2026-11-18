@@ -199,7 +199,8 @@ export class Police {
   }
 
   // Spawn a fixed number of cruisers in a pursuit wedge around the player
-  // (for screenshot scenes): two behind, one cutting in ahead.
+  // (for screenshot scenes): two behind, one cutting in ahead, one
+  // oncoming to box the player in, and one tight on the tail.
   spawnForShot(count) {
     const p = this.player;
     const fx = Math.sin(p.heading);
@@ -210,6 +211,8 @@ export class Police {
       { f: -40, r: -12, face: p.heading },
       { f: -48, r: 12, face: p.heading },
       { f: 18, r: 11, face: p.heading + Math.PI * 0.75 },
+      { f: 26, r: -14, face: p.heading + Math.PI },
+      { f: -22, r: 0, face: p.heading },
     ];
     for (let i = 0; i < count && i < offsets.length; i++) {
       const o = offsets[i];

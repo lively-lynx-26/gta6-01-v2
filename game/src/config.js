@@ -167,11 +167,11 @@ export const CFG = {
     paintColors: [0xc22424, 0x2e6f8e, 0xf2b705, 0x2e8b57, 0x6a3d9a, 0xe8e8e8],
   },
 
-  // Radio: three stations, each with a song and a short jingle.
+  // Radio: three stations, each with a song and its artist, and a short jingle.
   radio: [
-    { name: 'SOLMAR FM 96.4', song: 'Sunset Drive', notes: [523, 659, 784, 1047] },
-    { name: 'NEON WAVE 88.1', song: 'Midnight Tide', notes: [440, 554, 659, 880] },
-    { name: 'BAY BEATS 104.7', song: 'Paloma Nights', notes: [392, 494, 587, 784] },
+    { name: 'SOLMAR FM 96.4', song: 'Sunset Drive', artist: 'The Solmarines', notes: [523, 659, 784, 1047] },
+    { name: 'NEON WAVE 88.1', song: 'Midnight Tide', artist: 'Glass Harbor', notes: [440, 554, 659, 880] },
+    { name: 'BAY BEATS 104.7', song: 'Paloma Nights', artist: 'Neon Palms', notes: [392, 494, 587, 784] },
   ],
 
   // Boats: the speedboat moored in the Marina basin and the jet ski at the

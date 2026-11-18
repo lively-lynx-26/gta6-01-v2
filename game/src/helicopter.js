@@ -22,11 +22,11 @@ export class Helicopter {
     // ground so the chase camera can see it, and rises to clear the
     // roofs when its orbit carries it over a tall building.
     this.y = 16;
-    // A staged height for screenshots: the orbit height (34 m) clears
-    // the tallest towers, but that puts the helicopter above the frame
-    // of a chase camera. A shot may set this lower so the mesh reads in
-    // the frame; live play leaves it null and flies the low orbit.
-    this.heightOverride = null;
+    // A staged orbit radius for screenshots: the live orbit (30 m) keeps
+    // the helicopter small in the chase frame; a shot may pull it closer
+    // so the mesh reads large against the skyline. Live play leaves it
+    // null and flies the normal orbit.
+    this.radiusOverride = null;
 
     const group = new THREE.Group();
     const white = std(0xf2f2f2, 0.4, 0.3);
@@ -133,8 +133,9 @@ export class Helicopter {
     if (!active) return;
     const h = CFG.helicopter;
     this.angle += dt * h.orbitSpeed;
-    const x = player.x + Math.cos(this.angle) * h.circleRadius;
-    const z = player.z + Math.sin(this.angle) * h.circleRadius;
+    const radius = this.radiusOverride ?? h.circleRadius;
+    const x = player.x + Math.cos(this.angle) * radius;
+    const z = player.z + Math.sin(this.angle) * radius;
     // Rooftop clearance: the tallest roof near the helicopter sets the
     // orbit height (roof + 4 m), floored at the low orbit and capped so
     // it never climbs out of sight entirely. The height eases toward
@@ -158,8 +159,8 @@ export class Helicopter {
     this.mesh.position.set(x, y, z);
     // Face along the orbit, nose forward.
     this.mesh.rotation.y = Math.atan2(
-      player.x + Math.cos(this.angle + 0.1) * h.circleRadius - x,
-      player.z + Math.sin(this.angle + 0.1) * h.circleRadius - z,
+      player.x + Math.cos(this.angle + 0.1) * radius - x,
+      player.z + Math.sin(this.angle + 0.1) * radius - z,
     );
     this.rotorAngle += dt * 22;
     this.rotor.rotation.y = this.rotorAngle;

@@ -74,6 +74,8 @@ export class Player {
     this.engineLevel = 0; // 0-3, +15% speed and acceleration each
     this.armorLevel = 0; // 0-3, +50 max car health each
     this.nitro = false; // Shift for a boost while driving
+    this.nitroCharge = 100; // 0-100: drains while boosting, recharges off it
+    this.timePlayed = 0; // seconds in this run, for the map stats
     this.safehouse = false;
     this.carsStolen = 0;
     this.copsLost = 0;
@@ -527,7 +529,14 @@ export class Player {
       }
       return;
     }
-    const nitroActive = input.down('ShiftLeft') && this.nitro;
+    const nitroActive = input.down('ShiftLeft') && this.nitro && this.nitroCharge > 0;
+    // Nitro is a charge, not a switch: it drains while boosting and
+    // recharges while off it, so the HUD gauge means something.
+    if (nitroActive) {
+      this.nitroCharge = Math.max(0, this.nitroCharge - 25 * dt);
+    } else {
+      this.nitroCharge = Math.min(100, this.nitroCharge + 10 * dt);
+    }
     const spec = this.effectiveSpec(nitroActive);
     const axes = input.axes();
     // W/S: throttle and brake/reverse. S from a stop reverses.
@@ -653,6 +662,8 @@ export class Player {
       engineLevel: this.engineLevel,
       armorLevel: this.armorLevel,
       nitro: this.nitro,
+      nitroCharge: this.nitroCharge,
+      timePlayed: this.timePlayed,
       safehouse: this.safehouse,
       carsStolen: this.carsStolen,
       copsLost: this.copsLost,
@@ -682,6 +693,8 @@ export class Player {
     this.engineLevel = data.engineLevel ?? 0;
     this.armorLevel = data.armorLevel ?? 0;
     this.nitro = data.nitro ?? false;
+    this.nitroCharge = data.nitroCharge ?? 100;
+    this.timePlayed = data.timePlayed ?? 0;
     this.safehouse = data.safehouse ?? false;
     this.carsStolen = data.carsStolen ?? 0;
     this.copsLost = data.copsLost ?? 0;

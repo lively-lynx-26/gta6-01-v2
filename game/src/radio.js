@@ -18,10 +18,10 @@ export class Radio {
     return this.stations[this.index];
   }
 
-  // "SOLMAR FM 96.4 · Sunset Drive" — what the HUD shows.
+  // "SOLMAR FM 96.4 · Sunset Drive — The Solmarines" — what the HUD shows.
   label() {
     const s = this.station;
-    return `${s.name} · ${s.song}`;
+    return `${s.name} · ${s.song} — ${s.artist}`;
   }
 
   next() {

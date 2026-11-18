@@ -6,16 +6,18 @@
 // way on every run. Lines queue up and dismiss themselves after a few
 // seconds, or sooner on a key press.
 
-const PORTRAITS = {
+export const PORTRAITS = {
   rosa: { skin: '#c98e6b', hair: '#2a1a12', hairStyle: 'long', shirt: '#8e2f2f', bg: '#5a1f1f' },
   dario: { skin: '#b98a68', hair: '#14100c', hairStyle: 'cap', shirt: '#2e6f8e', bg: '#1d3a4a' },
   vince: { skin: '#d9a583', hair: '#6b6b6b', hairStyle: 'short', shirt: '#1c1c22', bg: '#2a2a30' },
   fenn: { skin: '#a87c5a', hair: '#3a2a1a', hairStyle: 'bun', shirt: '#2456a8', bg: '#1a2a4a' },
+  sloane: { skin: '#b98a68', hair: '#d8d8d8', hairStyle: 'short', shirt: '#2456a8', bg: '#16283a' },
 };
 
 // Paint one portrait on a 72x72 canvas: background, shoulders, head,
 // hair, eyes and mouth. Flat and stylised, like a character card.
-function paintPortrait(canvas, spec) {
+// Exported so the title screen can paint the same faces on its cards.
+export function paintPortrait(canvas, spec) {
   const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, 72, 72);
   ctx.fillStyle = spec.bg;

@@ -21,7 +21,7 @@ import { Minimap } from './minimap.js';
 import { DamageSmoke, MuzzleFlash, MeleeArc } from './effects.js';
 import { Helicopter } from './helicopter.js';
 import { Radio } from './radio.js';
-import { Dialogue } from './dialogue.js';
+import { Dialogue, PORTRAITS, paintPortrait } from './dialogue.js';
 import { ResponsePanel } from './response.js';
 import { Garage } from './garage.js';
 import { SideActivities } from './side.js';
@@ -307,6 +307,16 @@ let shotObjective = 'Explore Solmar Bay';
 let skyTime = 0;
 let lastStars = 0; // for the wanted sting when the heat climbs
 let lastBanner = null; // for the mission sting when a job pays out
+let shotHidden = false; // a shot stages HIDDEN (heat cooling off) directly
+// Police radio chatter: rotating SBPD lines while the heat is on.
+const CHATTER = [
+  'SBPD: All units, box in the red Comet GT on Bayfront Plaza!',
+  'SBPD: AIR-1 has eyes on the suspect — do not lose the visual.',
+  'SBPD: Roadblock going up on Paloma Boulevard — all units respond.',
+  'SBPD: Suspect is running the lights — use caution at the plaza.',
+];
+let chatterIndex = 0;
+let chatterTimer = 0;
 
 const minimap = new Minimap(el('hud-minimap'));
 const damageSmoke = new DamageSmoke(scene);
@@ -357,6 +367,27 @@ function showMenu() {
   pauseEl.style.display = 'none';
   menuEl.style.display = 'flex';
   btnContinue.style.display = hasSave() ? 'block' : 'none';
+  paintTitleScreen();
+}
+
+// The title screen: the three character cards wear the same drawn
+// portraits the dialogue box uses, and CONTINUE names what the save
+// holds (jobs done, cash). `info` stages the save line for a
+// screenshot; live play reads the real save.
+function paintTitleScreen(info = null) {
+  for (const canvas of document.querySelectorAll('.char-portrait')) {
+    paintPortrait(canvas, PORTRAITS[canvas.dataset.portrait] || PORTRAITS.dario);
+  }
+  const saveInfo = el('menu-save-info');
+  const data = info || (hasSave() ? loadGame() : null);
+  if (data) {
+    const jobs = data.mission ?? 0;
+    saveInfo.textContent = `Save: ${jobs} of 7 jobs · $${(data.cash ?? 0).toLocaleString('en-US')} · REP ${(data.rep ?? 0).toLocaleString('en-US')}`;
+    btnContinue.textContent = `CONTINUE — ${jobs} JOBS · $${(data.cash ?? 0).toLocaleString('en-US')}`;
+  } else {
+    saveInfo.textContent = '';
+    btnContinue.textContent = 'CONTINUE';
+  }
 }
 
 function updateHud() {
@@ -368,6 +399,15 @@ function updateHud() {
     const dist = missions.waypointDistance;
     el('hud-objective').textContent = missions.objective + (dist !== null ? ` — ${Math.round(dist)}m` : '');
   }
+  // STAGE x/y + timer + NEXT, under the objective — every top entry
+  // shows all three; a shot stages its own values.
+  const subEl = el('hud-mission-sub');
+  if (state === 'shot') {
+    subEl.textContent = shot.stage ? `${shot.stage} · ${shot.timer} · NEXT: ${shot.next}` : '';
+  } else {
+    const stage = missions.stage;
+    subEl.textContent = stage ? `STAGE ${stage}/${missions.stages} · ${missions.jobTimeText} · NEXT: ${missions.nextTitle}` : '';
+  }
   const bannerEl = el('hud-banner');
   if (state !== 'shot' && missions.bannerText) {
     bannerEl.textContent = missions.bannerText;
@@ -377,7 +417,7 @@ function updateHud() {
   }
   el('hud-cash').textContent = `$${player.cash.toLocaleString('en-US')}`;
   el('hud-stars').textContent = '★'.repeat(player.stars) + '☆'.repeat(5 - player.stars)
-    + (police.isHidden() ? ' · HIDDEN' : '');
+    + ((police.isHidden() || shotHidden) ? ' · HIDDEN' : '');
   el('hud-clock').textContent = formatClock(gameMinutes);
   el('hud-weather').textContent = weather.label();
   el('hud-radio').textContent = `♪ ${radio.label()}`;
@@ -404,9 +444,31 @@ function updateHud() {
   el('hud-stamina-fill').style.width = `${Math.max(0, player.stamina)}%`;
   el('hud-car-fill').style.width = player.onFoot ? '0%' : `${Math.max(0, (player.carHealth / player.carHealthMax) * 100)}%`;
   el('hud-speed').innerHTML = `${player.speedMph()} <small>MPH</small>`;
-  el('hud-vehicle').textContent = player.vehicleName() + (player.nitro && !player.onFoot ? ' · NITRO' : '');
+  el('hud-vehicle').textContent = player.vehicleName()
+    + (player.onFoot ? '' : ` · CONDITION ${Math.round((player.carHealth / player.carHealthMax) * 100)}%`)
+    + (player.nitro && !player.onFoot ? ' · NITRO' : '');
   el('hud-ammo').textContent = player.reloading ? 'RELOADING'
     : (player.weaponAmmo() === null ? player.weaponName() : `${player.weaponName()} ${player.weaponAmmo()}/${player.weaponMagazine()}`);
+  // The nitro gauge, under the speedometer, while Dario owns nitro.
+  const nitroEl = el('hud-nitro');
+  if (player.nitro && !player.onFoot) {
+    nitroEl.style.display = 'block';
+    el('hud-nitro-fill').style.width = `${Math.round(player.nitroCharge)}%`;
+    el('hud-nitro-pct').textContent = `${Math.round(player.nitroCharge)}%`;
+  } else {
+    nitroEl.style.display = 'none';
+  }
+  // Police radio chatter: a live SBPD line while the heat is on. Shot
+  // mode leaves the staged line alone.
+  if (state !== 'shot') {
+    const chatterEl = el('hud-chatter');
+    if (player.stars >= 3) {
+      chatterEl.textContent = CHATTER[chatterIndex];
+      chatterEl.style.display = 'block';
+    } else {
+      chatterEl.style.display = 'none';
+    }
+  }
   el('hud-side').textContent = side.fareLabel || side.raceLabel || (side.shellsFound > 0 ? `Golden shells ${side.shellsFound}/${CFG.shells}` : '');
   drawGauge();
   // The response panel lists the chasing units by callsign.
@@ -466,6 +528,8 @@ function newGame() {
   player.engineLevel = 0;
   player.armorLevel = 0;
   player.nitro = false;
+  player.nitroCharge = 100;
+  player.timePlayed = 0;
   player.safehouse = false;
   player.carsStolen = 0;
   player.copsLost = 0;
@@ -602,6 +666,22 @@ function updateCamera(dt, instant = false) {
 // --- Screenshot mode -----------------------------------------------------------
 function applyShot() {
   state = 'shot';
+  if (shotName === 'title') {
+    // The title screen over the city at sunset: the menu overlay, with
+    // a staged save on CONTINUE. No HUD, no loop — one frozen frame.
+    if (shot.golden) applyGoldenHour();
+    paintTitleScreen({ mission: 3, cash: 1700, rep: 1240 });
+    btnContinue.style.display = 'block';
+    menuEl.style.display = 'flex';
+    pauseEl.style.display = 'none';
+    hud.style.display = 'none';
+    camera.position.set(96, 38, 104);
+    camera.lookAt(0, 6, 0);
+    camera.updateProjectionMatrix();
+    renderer.render(scene, camera);
+    window.__shotReady = true;
+    return;
+  }
   menuEl.style.display = 'none';
   pauseEl.style.display = 'none';
   player.cash = shot.cash;
@@ -613,6 +693,10 @@ function applyShot() {
   player.ammo = CFG.pistol.magazine;
   player.carHealth = 100;
   player.carHealthMax = 100;
+  if (shot.carHealth !== undefined) player.carHealth = shot.carHealth;
+  player.nitro = !!shot.nitro;
+  player.nitroCharge = shot.nitroCharge ?? 100;
+  player.timePlayed = shot.timePlayed ?? 0;
   player.weapons = { smg: !!shot.smg, shotgun: !!shot.shotgun, bat: false, rifle: !!shot.rifle };
   player.ammoSmg = player.weapons.smg ? CFG.smg.magazine : 0;
   player.ammoShotgun = player.weapons.shotgun ? CFG.shotgun.magazine : 0;
@@ -644,9 +728,9 @@ function applyShot() {
   } else {
     player.spawn(shot.x, shot.z, shot.heading);
   }
-  // The chase shot shows the pursuit: three cruisers in a wedge around the
+  // The chase shot shows the pursuit: a five-cruiser wedge around the
   // Comet GT, the helicopter overhead, and traffic on the avenue.
-  if (shotName === 'chase' && shot.stars >= 3) police.spawnForShot(3);
+  if (shotName === 'chase' && shot.stars >= 3) police.spawnForShot(shot.cruisers ?? 3);
   if (shot.heli) {
     // Ahead and to the side of the player, so it reads in the frame.
     // Staged low and near-centre for the shot: the chase camera sits
@@ -656,7 +740,8 @@ function applyShot() {
     // still show from below). 10 m over the open plaza puts the whole
     // mesh, rotor included, in the upper frame against the skyline.
     helicopter.angle = 1.35;
-    helicopter.heightOverride = 10;
+    helicopter.heightOverride = shot.heliHeight ?? 10;
+    helicopter.radiusOverride = shot.heliRadius ?? null;
     helicopter.update(1 / 60, player, true);
   }
   if (shot.trafficNear) {
@@ -676,15 +761,19 @@ function applyShot() {
       c.mesh.rotation.y = c.heading;
     }
   }
-  // The foot shot shows the fight: two goons ahead of Dario, one straight
-  // in the line of fire.
+  // The foot shot shows the fight: six goons around the fountain, the
+  // plaza already on edge — residents flee from the first step.
   if (shotName === 'foot') {
     const fx = Math.sin(shot.heading);
     const fz = Math.cos(shot.heading);
     const rx = -fz;
     const rz = fx;
-    enemies.spawn(shot.x + fx * 10, shot.z + fz * 10);
-    enemies.spawn(shot.x + fx * 12 - rx * 4, shot.z + fz * 12 - rz * 4);
+    const spots = [[10, 0], [12, -4], [14, 5], [8, 7], [16, 0], [11, 9]];
+    for (const [f, r] of spots) {
+      enemies.spawn(shot.x + fx * f + rx * r, shot.z + fz * f + rz * r);
+    }
+    pedestrians.onGunshot(shot.x, shot.z);
+    for (const e of enemies.list) e.shootTimer = 0.05;
   }
   if (shotName === 'map') {
     // The map screen over the city, with a representative mid-game state.
@@ -699,6 +788,30 @@ function applyShot() {
     });
     cityMap.open();
   }
+  // Staged HUD extras: the dialogue line, the police chatter line, the
+  // district card and the shells counter the top entries all show.
+  if (shot.dialogue) {
+    dialogue.show(shot.dialogue.name, shot.dialogue.text, shot.dialogue.portrait);
+    dialogue.update(0.05);
+  }
+  if (shot.chatter) {
+    const chEl = el('hud-chatter');
+    chEl.textContent = shot.chatter;
+    chEl.style.display = 'block';
+  }
+  if (shot.districtCard) {
+    const d = districtAt(player.x, player.z);
+    if (d) {
+      el('hud-district-name').textContent = d.name;
+      el('hud-district-tag').textContent = d.tagline;
+      el('hud-district').style.display = 'block';
+    }
+  }
+  if (shot.shells) side.restoreShells(shot.shells);
+  if (shot.hidden) shotHidden = true;
+  // The night shot: set the sky to dusk-night from the clock, once —
+  // the frozen frame never runs the weather loop.
+  if (shot.night) weather.update(1 / 60, player.x, player.z, gameMinutes);
   // Advance a fixed number of fixed-length steps: no wall clock, so the
   // frame is identical on every run.
   const fixedDt = 1 / 60;
@@ -706,7 +819,9 @@ function applyShot() {
     skyTime += fixedDt;
     if (shot.mode === 'car' && player.car) {
       const spec = player.car.spec;
-      player.carSpeed = Math.max(0, player.carSpeed - player.carSpeed * 0.55 * fixedDt);
+      // The shot holds its staged speed: no coasting decay, so the
+      // frame reads at the speed the shot promises.
+      player.carSpeed = shot.speed;
       if (player.carSpeed > spec.maxSpeed) player.carSpeed = spec.maxSpeed;
       player.x += Math.sin(player.carHeading) * player.carSpeed * fixedDt;
       player.z += Math.cos(player.carHeading) * player.carSpeed * fixedDt;
@@ -724,14 +839,27 @@ function applyShot() {
     traffic.update(fixedDt, playerCar);
     pedestrians.update(fixedDt);
     police.update(fixedDt);
+    // The foot shot's last step: three goons fire as Dario does, so
+    // their tracers are fresh in the frozen frame.
+    if (shotName === 'foot' && i === shot.steps - 1) {
+      for (let gi = 0; gi < Math.min(3, enemies.list.length); gi++) {
+        enemies.list[gi].shootTimer = 0;
+      }
+    }
     enemies.update(fixedDt, player, null);
     if (shot.heli) helicopter.update(fixedDt, player, true);
-    // The foot shot fires on the last step, so the muzzle flash, the
-    // tracer and the damage number are fresh in the frozen frame.
+    // The foot shot fires on the last step, so the muzzle flash and the
+    // damage numbers are fresh in the frozen frame: two aimed rifle
+    // shots at the two nearest goons — the nearest rays clear the
+    // fountain, so both shots land.
     if (shotName === 'foot' && i === shot.steps - 1) {
-      const dx = Math.sin(shot.heading);
-      const dz = Math.cos(shot.heading);
-      world.fireShot(player.x, player.z, dx, dz, shot.weapon || 'pistol');
+      const alive = enemies.list.filter((e) => e.state === 'alive');
+      alive.sort((a, b) => (Math.hypot(a.x - player.x, a.z - player.z) - Math.hypot(b.x - player.x, b.z - player.z)));
+      for (let si = 0; si < Math.min(2, alive.length); si++) {
+        const e = alive[si];
+        const d = Math.hypot(e.x - player.x, e.z - player.z) || 1;
+        world.fireShot(player.x, player.z, (e.x - player.x) / d, (e.z - player.z) / d, shot.weapon || 'pistol');
+      }
     }
     // The chase shot carries a drift popup, like the top entries do.
     if (shotName === 'chase' && i === shot.steps - 1) {
@@ -739,7 +867,31 @@ function applyShot() {
       popups.spawnScreen(0.68, 0.46, 'NEAR MISS +25 REP', 'stunt');
     }
   }
+  // Hold the staged speed for the HUD: rams during the steps may have
+  // cut it, and the frame promises the staged speed. The car's condition
+  // is staged the same way: enterCar resets it to full, and rams chip
+  // it during the steps.
+  if (shot.mode === 'car' && player.car) player.carSpeed = shot.speed;
+  if (shot.carHealth !== undefined) player.carHealth = shot.carHealth;
+  // Two rifle shots went off in the foot scene: the magazine shows it.
+  if (shotName === 'foot') player.ammoRifle = CFG.rifle.magazine - 2;
+  // The foot shot stages a clean plaza: the cruisers the heat spawned
+  // during the steps would crowd the frame, so they leave.
+  if (shotName === 'foot') {
+    police.clearCruisers();
+    police.setStars(shot.stars);
+  }
   updateCamera(0, true);
+  if (shotName === 'chase') {
+    // Frame the car above the dialogue box: pull the camera back and up
+    // and aim at the car, so Vince's betrayal line never covers the
+    // Comet GT. The helicopter stays in the upper frame.
+    camera.position.set(
+      player.x + Math.sin(cameraYaw) * 14, 7,
+      player.z + Math.cos(cameraYaw) * 14,
+    );
+    camera.lookAt(player.x, 2.0, player.z);
+  }
   // The shot's popups were placed while the camera still sat at its
   // boot position, so re-project them now that the camera is framed:
   // otherwise a damage number can end up hidden behind the camera.
@@ -764,6 +916,17 @@ function loop() {
   if (state === 'playing') {
     skyTime += dt;
     gameMinutes += dt * CFG.clock.rate; // about one game-hour per two real minutes
+    player.timePlayed += dt; // the run clock, for the map stats
+    // The chatter line turns over every twelve seconds while wanted.
+    if (player.stars >= 3) {
+      chatterTimer -= dt;
+      if (chatterTimer <= 0) {
+        chatterIndex = (chatterIndex + 1) % CHATTER.length;
+        chatterTimer = 12;
+      }
+    } else {
+      chatterTimer = 0;
+    }
     animateSky(skyTime);
     animateWater(city.water, skyTime);
     // The sky and the weather move with the clock; the rain sets the

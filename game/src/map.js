@@ -75,10 +75,13 @@ export class CityMap {
     ctx.fillStyle = 'rgba(214, 193, 150, 0.7)';
     ctx.fillRect(this._x(MIN_X), this._y(192), w, this._y(216) - this._y(192));
 
-    // District blocks: faint fills.
+    // District blocks: each district gets its own colour, so the map
+    // reads at a glance — the monochrome grid did not.
     for (const d of DISTRICTS) {
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.05)';
+      ctx.fillStyle = d.color;
+      ctx.globalAlpha = 0.10;
       ctx.fillRect(this._x(d.x0), this._y(d.z0), (d.x1 - d.x0) * this.sx, (d.z1 - d.z0) * this.sy);
+      ctx.globalAlpha = 1;
     }
 
     // Streets: the road lattice.
@@ -159,6 +162,16 @@ export class CityMap {
     // Mission waypoint: a pulsing gold diamond.
     const wp = state.missions.waypoint;
     if (wp) {
+      // The GPS route: a pink dashed line from Dario to the waypoint,
+      // so the way there reads instantly.
+      ctx.strokeStyle = '#ff6fa5';
+      ctx.lineWidth = 2.5;
+      ctx.setLineDash([7, 5]);
+      ctx.beginPath();
+      ctx.moveTo(this._x(state.player.x), this._y(state.player.z));
+      ctx.lineTo(this._x(wp.x), this._y(wp.z));
+      ctx.stroke();
+      ctx.setLineDash([]);
       const px = this._x(wp.x);
       const py = this._y(wp.z);
       const pulse = 6 + Math.sin(state.time * 3) * 2;
@@ -243,6 +256,21 @@ export class CityMap {
     const tier = repTier(p.rep);
     const done = state.missions.index;
     const comp = CityMap.completion(done, state.side.shellsFound);
+    // Time played, from the run clock.
+    const tp = Math.floor(p.timePlayed ?? 0);
+    const timePlayed = tp >= 3600
+      ? `${Math.floor(tp / 3600)}h ${Math.floor((tp % 3600) / 60)}m`
+      : `${Math.floor(tp / 60)}m`;
+    // The next unlock, so the map teases what comes next: the cheapest
+    // garage upgrade Dario has not bought yet, then the properties.
+    let nextUnlock = '—';
+    if (p.engineLevel < 3) nextUnlock = `ENGINE LEVEL ${p.engineLevel + 1} — $${CFG.garage.enginePrice}`;
+    else if (p.armorLevel < 3) nextUnlock = `ARMOR PLATING ${p.armorLevel + 1} — $${CFG.garage.armorPrice}`;
+    else if (!p.nitro) nextUnlock = `NITRO — $${CFG.garage.nitroPrice}`;
+    else if (!p.safehouse) nextUnlock = `SAFEHOUSE — $${CFG.garage.safehousePrice}`;
+    else if (state.properties && !state.properties.penthouse) nextUnlock = `PENTHOUSE — $${CFG.properties.penthouse.price}`;
+    else if (state.properties && !state.properties.taxico) nextUnlock = `BAY CAB CO. STAKE — $${CFG.properties.taxico.price}`;
+    else nextUnlock = 'ALL UPGRADES OWNED';
     this.statsEl.innerHTML = `
       <div>CASH <b>$${p.cash.toLocaleString('en-US')}</b></div>
       <div>REP <b>${p.rep.toLocaleString('en-US')} — ${tier.name}</b> (${Math.round(repProgress(p.rep) * 100)}% to next)</div>
@@ -253,6 +281,8 @@ export class CityMap {
       <div>BEST JUMP <b>${state.side.bestJump.dist > 0 ? `${state.side.bestJump.dist}m (${state.side.bestJump.air}s)` : '—'}</b></div>
       <div>PROPERTIES <b>${state.properties ? state.properties.ownedLabel() : '—'}</b></div>
       <div>COMPLETION <b>${comp}%</b></div>
-      <div>SAFEHOUSE <b>${state.safehouse ? 'OWNED' : '—'}</b></div>`;
+      <div>SAFEHOUSE <b>${state.safehouse ? 'OWNED' : '—'}</b></div>
+      <div>TIME PLAYED <b>${timePlayed}</b></div>
+      <div>NEXT UNLOCK <b>${nextUnlock}</b></div>`;
   }
 }

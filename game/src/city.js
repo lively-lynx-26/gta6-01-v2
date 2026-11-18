@@ -28,6 +28,65 @@ export function buildCity(scene) {
   const textures = buildTextures(CFG.seed);
   const water = makeWaterMaterial();
 
+  // --- Roads: the drivable lattice. Street centrelines run every 48 m and
+  // each street is 12 m wide, so a point is on a road when it lies within
+  // a street band (plus a small trunk clearance) on either axis — that
+  // covers streets, driving lanes and intersections. No tree may stand in
+  // a road: every tree planted below goes through plantTree, which nudges
+  // any candidate off the road (and out of water and buildings) first.
+  const STREET_LINES = [-192, -144, -96, -48, 0, 48, 96, 144, 192];
+  const ROAD_HALF = CFG.streetWidth / 2; // 6 m
+  const TREE_CLEARANCE = 0.5; // a trunk centre must clear the road edge by this
+  function isOnRoad(x, z) {
+    for (const line of STREET_LINES) {
+      if (Math.abs(x - line) <= ROAD_HALF + TREE_CLEARANCE) return true;
+      if (Math.abs(z - line) <= ROAD_HALF + TREE_CLEARANCE) return true;
+    }
+    return false;
+  }
+  // Open water: the Marina basin and the ocean. Trees never stand in it.
+  function isWater(x, z) {
+    if (z >= 216) return true; // the ocean, south of the beach
+    return x >= 147 && x <= 193 && z >= -62 && z <= 14; // the Marina basin
+  }
+  // A spot is blocked for a tree when it is on a road, in water, or inside
+  // a building (or pier) collider.
+  function isBlocked(x, z) {
+    if (isOnRoad(x, z) || isWater(x, z)) return true;
+    for (const c of colliders) {
+      if (x >= c.minX - 0.5 && x <= c.maxX + 0.5 && z >= c.minZ - 0.5 && z <= c.maxZ + 0.5) return true;
+    }
+    return false;
+  }
+  // Deterministically nudge a tree spot to the nearest free spot: try
+  // offsets in a widening ring until one is free (roads are 12 m wide, so
+  // a shift of at most ~8 m always escapes one; the ring reaches 16 m).
+  // A spot already free is returned unchanged. Null only if nothing
+  // nearby is free — then the tree is not planted at all.
+  function offRoadSpot(x, z) {
+    if (!isBlocked(x, z)) return { x, z };
+    const steps = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
+    for (let r = 2; r <= 16; r += 2) {
+      for (const [dx, dz] of steps) {
+        const nx = x + dx * r;
+        const nz = z + dz * r;
+        if (!isBlocked(nx, nz)) return { x: nx, z: nz };
+      }
+    }
+    return null;
+  }
+  // Plant one tree, but never in a road (nor in water or a building): the
+  // candidate spot is nudged to the nearest free spot first. The mesh is
+  // already built, so the seeded stream is untouched by the nudge.
+  function plantTree(tree) {
+    const spot = offRoadSpot(tree.position.x, tree.position.z);
+    if (!spot) return false;
+    tree.position.set(spot.x, tree.position.y, spot.z);
+    scene.add(tree);
+    trees.push(tree);
+    return true;
+  }
+
   // --- Ground: one asphalt sheet for the whole city, then raised concrete
   // pads for each block, sand for the beach and water for the ocean.
   const ground = new THREE.Mesh(
@@ -104,8 +163,7 @@ export function buildCity(scene) {
         for (let t = 0; t < count; t++) {
           const tree = buildTreeMesh(rng, 'shade', textures.bark);
           tree.position.set(bx + range(rng, -13, 13), 0.3, bz + range(rng, -13, 13));
-          scene.add(tree);
-          trees.push(tree);
+          plantTree(tree);
         }
         continue;
       }
@@ -140,8 +198,7 @@ export function buildCity(scene) {
     const angle = (t / 10) * Math.PI * 2;
     const tree = buildTreeMesh(rng, 'shade', textures.bark);
     tree.position.set(Math.cos(angle) * 34, 0.3, Math.sin(angle) * 34);
-    scene.add(tree);
-    trees.push(tree);
+    plantTree(tree);
   }
 
   // --- The Docks: warehouses on the south edge and piers over the water.
@@ -170,8 +227,7 @@ export function buildCity(scene) {
     // Keep trees out of the plaza disc and the docks.
     if (Math.hypot(tree.position.x, tree.position.z) < 42) continue;
     if (tree.position.z > 150) continue;
-    scene.add(tree);
-    trees.push(tree);
+    plantTree(tree);
   }
 
   // --- Palms along the beach and the Marina: tall curved trunks and
@@ -181,14 +237,12 @@ export function buildCity(scene) {
     if (Math.abs(x + 36) < 8 || Math.abs(x) < 8 || Math.abs(x - 36) < 8) continue; // keep the piers clear
     const palm = buildTreeMesh(rng, 'palm', textures.bark);
     palm.position.set(x, 0, p % 2 === 0 ? 198 : 210);
-    scene.add(palm);
-    trees.push(palm);
+    plantTree(palm);
   }
   for (const [px, pz] of [[142, -52], [142, -24], [142, 4], [150, -38]]) {
     const palm = buildTreeMesh(rng, 'palm', textures.bark);
     palm.position.set(px, 0, pz);
-    scene.add(palm);
-    trees.push(palm);
+    plantTree(palm);
   }
 
   // --- Parked cars: ten of them along the streets, one Comet GT and one
